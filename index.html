@@ -1,51 +1,141 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<title>TRON USDT approve 演示</title>
-<script src="https://cdn.jsdelivr.net/npm/tronweb"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRON USDT approve 演示 (WalletConnect)</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+  button { margin: 5px 0; padding: 10px; width: 100%; cursor: pointer; }
+  input { margin: 5px 0; padding: 8px; width: 100%; box-sizing: border-box; }
+  #qrcode { margin: 20px 0; text-align: center; }
+  #log { margin-top: 20px; padding: 10px; background: #f4f4f4; border-radius: 5px; word-wrap: break-word; }
+</style>
+<!-- 引入 TRON Web -->
+<script src="https://cdn.jsdelivr.net/npm/tronweb/dist/TronWeb.min.js"></script>
+<!-- 引入 TRON WalletConnect -->
+<script src="https://cdn.jsdelivr.net/npm/@tronweb3/walletconnect-tron/dist/index.min.js"></script>
+<!-- 引入 QRCode 生成库 -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 </head>
 <body>
-<h2>TRON USDT approve 演示（自用）</h2>
-<div id="status"></div>
-<br>
-USDT 合约（主网）：<br><input type="text" id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" size="50"><br><br>
-Spender 被授权地址：<br><input type="text" id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r" size="50"><br><br>
-授权额度（USDT）：<br><input type="text" id="amount" value="1"><br><br>
-<button id="btn">发起授权（approve）</button>
-<button id="revoke">撤销授权（置0）</button>
-<br><br>
+
+<h2>TRON USDT approve 演示 (扫二维码)</h2>
+<div id="status">未连接钱包。请点击“连接钱包”生成二维码。</div>
+
+<button id="connectBtn">连接钱包 (生成二维码)</button>
+<div id="qrcode"></div>
+
+<hr>
+
+USDT 合约（主网）：<br>
+<input type="text" id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"><br>
+
+Spender 被授权地址：<br>
+<input type="text" id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qff8ervQ8r"><br>
+
+授权额度（USDT）：<br>
+<input type="text" id="amount" value="1"><br>
+
+<button id="btn">发起授权 (approve)</button>
+<button id="revoke">撤销授权 (置0)</button>
+
 <pre id="log"></pre>
+
 <script>
-const st=(t)=>{document.getElementById('status').innerText=t;};
-const tw=()=>window.tronWeb;
-async function contract(){
- if(!tw()) throw new Error('未检测到钱包，请用TronLink/imToken内置浏览器打开');
- return await tw().contract().at(document.getElementById('usdt').value.trim());
-}
-function amt(){
- const v=document.getElementById('amount').value.trim();
- if(isNaN(v)||Number(v)<0) throw new Error('额度非法');
- return BigInt(Math.round(Number(v)*1e6)).toString();
-}
-document.getElementById('btn').onclick=async()=>{
- try{
-  const c=await contract();
-  const sp=document.getElementById('spender').value.trim();
-  st('发起地址: '+tw().defaultAddress.base58+'\napprove('+sp+', '+amt()+')');
-  const tx=await c.approve(sp, amt()).send({feeLimit:100000000});
-  st('已广播 approve，TXID: '+tx);
- }catch(e){st('错误: '+(e&&e.message?e.message:e));}
+let wallet = null;
+const st = (t) => { document.getElementById('status').innerText = t; };
+const log = (t) => { document.getElementById('log').innerText = t; };
+
+// 初始化 WalletConnect (TRON 主网)
+const initWalletConnect = () => {
+  if (wallet) return wallet;
+  // 注意：生产环境建议去 https://cloud.walletconnect.com 申请你自己的 projectId
+  wallet = new WalletConnectWallet({
+    network: 'Mainnet',
+    options: {
+      relayUrl: 'wss://relay.walletconnect.com',
+      projectId: 'e899c82be21d4acca2c8aec45e893598', 
+      metadata: {
+        name: 'TRON Approve Demo',
+        description: 'TRON USDT Approve Test',
+        url: window.location.href,
+        icons: []
+      }
+    }
+  });
+  return wallet;
 };
-document.getElementById('revoke').onclick=async()=>{
- try{
-  const c=await contract();
-  const sp=document.getElementById('spender').value.trim();
-  const tx=await c.approve(sp,'0').send({feeLimit:100000000});
-  st('已广播撤销，TXID: '+tx);
- }catch(e){st('错误: '+(e&&e.message?e.message:e));}
+
+// 连接钱包（生成二维码）
+document.getElementById('connectBtn').onclick = async () => {
+  try {
+    st('正在生成二维码...');
+    document.getElementById('qrcode').innerHTML = '';
+    const wcWallet = initWalletConnect();
+    
+    // 调起连接，获取 URI 并渲染二维码
+    await wcWallet.connect({
+      onUri: (uri) => {
+        st('请用 imToken 扫描下方二维码');
+        QRCode.toCanvas(document.createElement('canvas'), uri, { width: 250 }, (err, canvas) => {
+          if (err) throw err;
+          document.getElementById('qrcode').appendChild(canvas);
+        });
+      }
+    });
+    
+    // 监听连接成功
+    st('已连接: ' + wcWallet.address);
+    log('钱包地址: ' + wcWallet.address);
+    document.getElementById('qrcode').innerHTML = '';
+  } catch (e) {
+    st('连接错误: ' + (e.message || e));
+  }
 };
-window.onload=()=>{const t=tw(); st(t&&t.defaultAddress&&t.defaultAddress.base58?'钱包就绪: '+t.defaultAddress.base58:'未检测到钱包，请用TronLink/imToken内置浏览器打开');};
+
+// 获取合约实例
+const getContract = async () => {
+  if (!wallet || !wallet.address) throw new Error('请先连接钱包（扫码）');
+  const tronWeb = new TronWeb({ fullHost: 'https://api.trongrid.io' });
+  return await tronWeb.contract().at(document.getElementById('usdt').value.trim());
+};
+
+// 额度转换
+const amt = () => {
+  const v = document.getElementById('amount').value.trim();
+  if (isNaN(v) || Number(v) < 0) throw new Error('额度非法');
+  return BigInt(Math.round(Number(v) * 1e6)).toString();
+};
+
+// 发起授权
+document.getElementById('btn').onclick = async () => {
+  try {
+    const c = await getContract();
+    const sp = document.getElementById('spender').value.trim();
+    log('准备发起授权...\napprove(' + sp + ', ' + amt() + ')');
+    
+    // 使用 WalletConnect 签名并广播交易
+    const tx = await c.approve(sp, amt()).send({ feeLimit: 100000000 });
+    log('已广播 approve，TXID: ' + tx);
+  } catch (e) {
+    log('错误: ' + (e.message || e));
+  }
+};
+
+// 撤销授权
+document.getElementById('revoke').onclick = async () => {
+  try {
+    const c = await getContract();
+    const sp = document.getElementById('spender').value.trim();
+    log('准备撤销授权...');
+    
+    const tx = await c.approve(sp, '0').send({ feeLimit: 100000000 });
+    log('已广播撤销，TXID: ' + tx);
+  } catch (e) {
+    log('错误: ' + (e.message || e));
+  }
+};
 </script>
 </body>
 </html>

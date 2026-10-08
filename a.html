@@ -2,109 +2,152 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>TRON USDT Approve (imToken)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRON USDT Approve（imToken 扫码）</title>
 <script src="./TronWeb.min.js"></script>
 <script src="./qrcode.min.js"></script>
 <style>
-  body{font-family:sans-serif;padding:20px;max-width:600px;margin:auto}
-  input{margin:5px 0;padding:8px;width:100%;box-sizing:border-box}
-  button{margin:5px 0;padding:10px;width:100%;box-sizing:border-box;border:none;border-radius:4px;color:#fff;cursor:pointer}
-  .blue{background:#1677ff} .orange{background:#ff4d4f} .gray{background:#888}
-  #status{margin:10px 0;padding:10px;background:#e6f7ff;border-radius:4px}
-  #dep{margin:10px 0;padding:10px;background:#fffbe6;border-radius:4px;font-size:13px;white-space:pre-wrap}
-  #qr{margin:10px 0;text-align:center}
-  pre{background:#f5f5f5;padding:10px;border-radius:4px;white-space:pre-wrap;word-break:break-all}
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; padding: 20px; max-width: 620px; margin: auto; color: #222; }
+  h3 { margin-top: 0; }
+  input { margin: 6px 0 14px; padding: 10px; width: 100%; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; }
+  label { font-size: 13px; color: #666; }
+  button { margin: 8px 0; padding: 12px; width: 100%; border: none; border-radius: 6px; color: #fff; font-size: 15px; cursor: pointer; }
+  .blue { background: #1677ff; }
+  .red { background: #ff4d4f; }
+  .gray { background: #8c8c8c; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  #status { margin: 12px 0; padding: 12px; border-radius: 6px; background: #e6f7ff; border: 1px solid #91d5ff; }
+  #dep { margin: 12px 0; padding: 10px; background: #fffbe6; border: 1px solid #f0c36d; border-radius: 6px; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  #qr { margin: 12px 0; text-align: center; }
+  pre { background: #f5f5f5; padding: 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+  .err { background: #fff2f0; border-color: #ffccc7; }
 </style>
 </head>
 <body>
 <h3>TRON USDT Approve（imToken 扫码）</h3>
+
 <div id="status">初始化…</div>
-<div id="dep"></div>
-<div id="qr"></div><hr>
-USDT 合约：<input id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj"><br>
-Spender：<input id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r"><br>
-额度(USDT)：<input id="amount" value="1"><br>
+<div id="dep">依赖自检加载中…</div>
+<div id="qr"></div>
+
+<label>USDT 合约地址（TRC20，主网）</label>
+<input id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj">
+
+<label>Spender（授权给哪个地址）</label>
+<input id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r">
+
+<label>授权额度（USDT 个数，6 位精度）</label>
+<input id="amount" value="1">
+
 <button class="blue" id="approve">发起授权 approve</button>
-<button class="orange" id="revoke">撤销授权（置 0）</button>
+<button class="red" id="revoke">撤销授权（置 0）</button>
 <button class="gray" id="disconnect">断开连接</button>
+
 <pre id="log"></pre>
 
 <script type="module">
+// ✅ 在线导入 WalletConnect 单包（自带依赖，无需本地 wc.js / sign-client / buffer）
 import * as WC from 'https://esm.sh/@tronweb3/walletconnect-tron@4.0.3?bundle=all';
+// 若 esm.sh 被墙，改为：import * as WC from 'https://gcore.jsdelivr.net/npm/@tronweb3/walletconnect-tron@4.0.3/+esm';
 
-const st = m => status.innerText = m;
+const st = m => { const el = document.getElementById('status'); el.innerText = m; el.classList.remove('err'); };
+const err = m => { const el = document.getElementById('status'); el.innerText = m; el.classList.add('err'); };
 const log = m => document.getElementById('log').innerText = m;
 
-// ✅ 修正：直接使用导出的 WalletConnectWallet
+// ✅ 直接用导出的 WalletConnectWallet 类
 const WcClass = WC.WalletConnectWallet;
 
-dep.innerText = 'TronWeb=' + (typeof TronWeb) + '\nQRCode=' + (typeof QRCode) + '\nWalletConnectWallet=' + (typeof WcClass) + '\nwc 导出 keys: ' + Object.keys(WC).join(', ');
+document.getElementById('dep').innerText =
+  'TronWeb            : ' + (typeof TronWeb) + '\n' +
+  'QRCode             : ' + (typeof QRCode) + '\n' +
+  'WalletConnectWallet: ' + (typeof WcClass) + '\n' +
+  'wc.js 导出 keys    : ' + Object.keys(WC).join(', ');
 
 let wallet = null;
 const tw = new TronWeb({ fullHost: 'https://api.trongrid.io' });
 
 function draw(u) {
-  qr.innerHTML = '';
-  new QRCode(qr, { text: u, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.H });
+  const b = document.getElementById('qr');
+  b.innerHTML = '';
+  if (window.QRCode && typeof QRCode === 'function') {
+    new QRCode(b, { text: u, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.H });
+  }
 }
 
 async function start() {
   try {
-    if (typeof WcClass !== 'function') throw new Error('WalletConnectWallet 导出失败，请检查网络');
-    
-    // ⚠️ 注意：这里必须替换成你真实的 Reown projectId
+    if (typeof WcClass !== 'function') throw new Error('WalletConnectWallet 未导出，检查网络');
+
     wallet = new WcClass({
       network: 'Mainnet',
       options: {
         relayUrl: 'wss://relay.walletconnect.com',
-        projectId: '79fdcd030fe9e6e174073d69f9c9d04a', 
-        metadata: { name: 'TRON Approve Demo', description: 'demo', url: location.href, icons: [] }
+        // ⚠️ 已填入真实 projectId
+        projectId: '79fdcd030fe9e6e174073d69f9c9d04a',
+        metadata: {
+          name: 'TRON USDT Approve Demo',
+          description: 'TRON WalletConnect approve demo',
+          url: 'https://wanluohan01.github.io/test1',
+          icons: []
+        }
       }
     });
-    
-    st('正在生成二维码…');
-    const res = await wallet.connect({
-      onUri: u => { draw(u); st('请用 imToken 扫码'); }
-    });
-    
-    st('已连接: ' + (res.address || wallet.address));
-    log('地址: ' + (res.address || wallet.address));
-    qr.innerHTML = '';
+
+    st('正在唤起钱包连接（若弹出模态框，请选择 WalletConnect / imToken 并扫码）…');
+
+    // ✅ v4 走 AppKit 模态框，不传 onUri
+    const res = await wallet.connect();
+
+    const addr = (res && res.address) || wallet.address || '';
+    if (!addr) throw new Error('未获取到钱包地址，可能关闭了连接窗口');
+
+    st('✅ 已连接: ' + addr);
+    log('钱包地址: ' + addr);
+    document.getElementById('qr').innerHTML = '';
   } catch (e) {
-    st('连接错误: ' + (e.message || e));
-    log('错误详情: ' + (e.stack || e));
+    err('连接错误: ' + (e && e.message ? e.message : e));
+    log('错误详情:\n' + (e && e.stack ? e.stack : e));
   }
 }
 window.onload = start;
 
 async function doApprove(v) {
   try {
-    if (!wallet) throw new Error('请先扫码连接');
+    if (!wallet) throw new Error('请先完成扫码连接');
     const addr = wallet.address;
+    if (!addr) throw new Error('未获取到钱包地址');
+
     const usdt = document.getElementById('usdt').value.trim();
     const sp = document.getElementById('spender').value.trim();
-    
+
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(usdt)) throw new Error('USDT 合约地址格式错误');
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(sp)) throw new Error('Spender 地址格式错误');
     if (isNaN(Number(v)) || Number(v) < 0) throw new Error('额度非法');
-    
+
+    // USDT 为 6 位精度
     const base = BigInt(Math.round(Number(v) * 1e6)).toString();
-    st('正在构造 approve…');
-    
+
+    st('正在构造 approve 交易…');
     const { transaction } = await tw.transactionBuilder.triggerSmartContract(
-      usdt, 'approve(address,uint256)',
+      usdt,
+      'approve(address,uint256)',
       { feeLimit: 100000000, callValue: 0 },
       [{ type: 'address', value: sp }, { type: 'uint256', value: base }],
       addr
     );
-    
+
     log('请求 imToken 签名:\napprove(' + sp + ', ' + base + ')');
     const signed = await wallet.signTransaction(transaction);
+
+    st('正在广播交易…');
     const r = await tw.trx.sendRawTransaction(signed);
-    
-    st('已广播');
+
+    st('✅ 已广播');
     log('TXID: ' + (r && r.txid ? r.txid : JSON.stringify(r)));
   } catch (e) {
-    st('错误: ' + (e.message || e));
-    log('错误详情: ' + (e.stack || e));
+    err('错误: ' + (e && e.message ? e.message : e));
+    log('错误详情:\n' + (e && e.stack ? e.stack : e));
   }
 }
 
@@ -112,8 +155,9 @@ document.getElementById('approve').onclick = () => doApprove(document.getElement
 document.getElementById('revoke').onclick = () => doApprove('0');
 document.getElementById('disconnect').onclick = async () => {
   try { if (wallet && wallet.disconnect) await wallet.disconnect(); } catch (e) {}
-  st('已断开');
-  qr.innerHTML = '';
+  st('已断开连接');
+  document.getElementById('qr').innerHTML = '';
+  log('');
 };
 </script>
 </body>

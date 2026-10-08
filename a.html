@@ -7,7 +7,7 @@
 <style>body{font-family:Arial;max-width:640px;margin:20px auto;padding:0 16px}button{width:100%;padding:10px;margin:6px 0}input{width:100%;padding:8px;margin:5px 0;box-sizing:border-box}#qr{text-align:center;margin:16px 0}#log{background:#f4f4f4;padding:10px;border-radius:6px;white-space:pre-wrap;word-break:break-all}</style>
 <!-- TronWeb -->
 <script src="https://cdn.jsdelivr.net/npm/tronweb/dist/TronWeb.min.js"></script>
-<!-- WalletConnect Tron UMD（如可用） -->
+<!-- WalletConnect Tron UMD -->
 <script src="https://cdn.jsdelivr.net/npm/@tronweb3/walletconnect-tron/dist/index.umd.min.js"></script>
 <!-- qrcode -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
@@ -31,12 +31,9 @@ const log=m=>document.getElementById('log').innerText=m;
 let wallet=null, tronWeb=new TronWeb({fullHost:'https://api.trongrid.io'});
 
 function resolveWC(){
-  // 1) UMD 全局
   if(window.WalletConnectWallet) return Promise.resolve(window.WalletConnectWallet);
-  // 2) 某些 UMD 挂在对象里
   if(window['@tronweb3/walletconnect-tron'] && window['@tronweb3/walletconnect-tron'].WalletConnectWallet)
     return Promise.resolve(window['@tronweb3/walletconnect-tron'].WalletConnectWallet);
-  // 3) ESM 兜底
   return import('https://cdn.jsdelivr.net/npm/@tronweb3/walletconnect-tron@3.0.0/+esm')
     .then(m=>m.WalletConnectWallet||(m.default&&m.default.WalletConnectWallet)||m.default)
     .then(cls=>{ if(!cls) throw new Error('EMSM未导出WalletConnectWallet'); return cls; });
@@ -50,7 +47,7 @@ document.getElementById('connect').onclick=async()=>{
     network:'Mainnet',
     options:{
       relayUrl:'wss://relay.walletconnect.com',
-      projectId:'79fdcd030fe9e6e174073d69f9c9d04a',   // ←必须改，公共id会失败
+      projectId:'79fdcd030fe9e174073d69f9c9d04a', // ✅ 已替换为你自己的 Project ID
       metadata:{name:'TRON approve demo',description:'demo',url:location.href,icons:[]}
     }
   });
@@ -76,7 +73,7 @@ async function doApprove(v){
   const usdt=document.getElementById('usdt').value.trim();
   const sp=document.getElementById('spender').value.trim();
   if(isNaN(Number(v))||Number(v)<0) throw new Error('额度非法');
-  const base=BigInt(Math.round(Number(v)*1e6)).toString(); // USDT 6位
+  const base=BigInt(Math.round(Number(v)*1e6)).toString(); 
   st('构造approve交易…');
   const {transaction}=await tronWeb.transactionBuilder.triggerSmartContract(
     usdt,'approve(address,uint256)',
@@ -85,8 +82,8 @@ async function doApprove(v){
     wallet.address
   );
   log('请求imToken签名:\napprove('+sp+', '+base+')');
-  const signed=await wallet.signTransaction(transaction); // 手机弹框
-  const r=await tronWeb.trx.sendRawTransaction(signed);   // 广播
+  const signed=await wallet.signTransaction(transaction); 
+  const r=await tronWeb.trx.sendRawTransaction(signed);   
   st('已广播'); log('TXID:'+(r.txid||JSON.stringify(r)));
  }catch(e){ st('错误:'+(e&&e.message?e.message:e)); }
 }

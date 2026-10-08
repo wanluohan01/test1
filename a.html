@@ -4,88 +4,86 @@
 <meta charset="UTF-8">
 <title>TRON USDT Approve (imToken 扫码)</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 600px; margin: 20px auto; padding: 0 15px; }
-  h3 { margin-bottom: 10px; }
-  #status { padding: 8px; background: #e6f7ff; border-radius: 4px; margin-bottom: 10px; }
-  #dep { background: #fffbe6; padding: 8px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; margin-bottom: 15px; }
-  #qr { text-align: center; margin: 15px 0; }
-  label { display: block; margin-top: 10px; color: #555; }
-  input { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-  button { width: 100%; padding: 10px; margin-top: 10px; border: none; border-radius: 4px; color: #fff; cursor: pointer; }
+  body { font-family: system-ui, sans-serif; max-width: 420px; margin: 40px auto; padding: 0 16px; }
+  .box { border: 1px solid #ddd; padding: 10px; border-radius: 6px; margin-bottom: 12px; background: #fafafa; white-space: pre-wrap; word-break: break-all; font-size: 13px; }
+  .alert { background: #eef7ff; border-color: #b6dcff; }
+  .err { background: #fff1f1; border-color: #ffb6b6; }
+  label { display: block; margin-top: 10px; font-size: 14px; }
+  input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+  button { width: 100%; padding: 10px; margin-top: 10px; border: 0; border-radius: 6px; color: #fff; cursor: pointer; }
   .blue { background: #1677ff; }
   .red { background: #ff4d4f; }
   .gray { background: #888; }
-  #log { background: #f5f5f5; padding: 10px; margin-top: 15px; min-height: 40px; white-space: pre-wrap; word-break: break-all; }
+  #qr { display: flex; justify-content: center; margin: 10px 0; }
 </style>
 <!-- 本地依赖 -->
-<script src="./TronWeb.min.js"></script>
-<script src="./qrcode.min.js"></script>
+<script src="TronWeb.min.js"></script>
+<script src="qrcode.min.js"></script>
 </head>
 <body>
+
 <h3>TRON USDT Approve (imToken 扫码)</h3>
-<div id="status">初始化...</div>
-<div id="dep"></div>
-<div id="qr"></div>
+<div id="status" class="box alert">初始化...</div>
+<div id="dep" class="box"></div>
 
-<label>USDT 合约：</label>
+<label>USDT 合约:</label>
 <input id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj">
-
-<label>Spender：</label>
+<label>Spender:</label>
 <input id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r">
-
-<label>额度(USDT)：</label>
+<label>额度(USDT):</label>
 <input id="amount" value="1">
 
 <button class="blue" id="approve">发起授权 approve</button>
 <button class="red" id="revoke">撤销授权（置 0）</button>
 <button class="gray" id="disconnect">断开连接</button>
-<pre id="log"></pre>
+
+<div id="qr"></div>
+<pre id="log" class="box"></pre>
 
 <script type="module">
-// 在线导入 WalletConnect (v4)
+// 使用 esm.sh 在线导入 WalletConnect TRON v4
 import * as WC from 'https://esm.sh/@tronweb3/walletconnect-tron@4.0.3?bundle=all';
-// 若 esm.sh 被拦，请改用下方 jsDelivr 备选：
-// import * as WC from 'https://gcore.jsdelivr.net/npm/@tronweb3/walletconnect-tron@4.0.3/+esm';
 
-// ✅ 修复：安全获取 DOM 元素并设置文本
-const statusEl = document.getElementById('status');
-const depEl = document.getElementById('dep');
-const qrEl = document.getElementById('qr');
-const logEl = document.getElementById('log');
+const status = document.getElementById('status');
+const dep = document.getElementById('dep');
+const qr = document.getElementById('qr');
+const log = document.getElementById('log');
 
-const st = (m) => { if(statusEl) statusEl.innerText = m; };
-const log = (m) => { if(logEl) logEl.innerText = m; };
+const st = m => status.innerText = m;
+const logMsg = m => log.innerText = m;
 
-// 依赖自检
+// 依赖自检：使用官方导出的 WalletConnectChainID
 const WcClass = WC.WalletConnectWallet;
-depEl.innerText = 
-  'TronWeb=' + (typeof TronWeb) + 
-  '\nQRCode=' + (typeof QRCode) + 
-  '\nWalletConnectWallet=' + (typeof WcClass) + 
-  '\nwc 导出 keys: ' + Object.keys(WC).join(', ');
+const ChainID = WC.WalletConnectChainID;
+
+dep.innerText = 
+`TronWeb=${typeof TronWeb}\n` +
+`QRCode=${typeof QRCode}\n` +
+`WalletConnectWallet=${typeof WcClass}\n` +
+`wc 导出 keys: ` + Object.keys(WC).join(', ');
 
 let wallet = null;
 const tw = new TronWeb({ fullHost: 'https://api.trongrid.io' });
 
 function draw(u) {
-  qrEl.innerHTML = '';
-  new QRCode(qrEl, { text: u, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.H });
+  qr.innerHTML = '';
+  new QRCode(qr, { text: u, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.H });
 }
 
 async function start() {
   try {
     if (typeof WcClass !== 'function') throw new Error('WalletConnectWallet 导出失败，请检查网络');
     
-    // 初始化 WalletConnect
+    // 1. 初始化时传入正确的 ChainID 枚举
     wallet = new WcClass({
-      network: 'Mainnet',
+      network: ChainID ? ChainID.Mainnet : 'Mainnet', 
       options: {
         relayUrl: 'wss://relay.walletconnect.com',
-        projectId: '79fdcd030fe9e6e174073d69f9c9d04a', // 真实 ID
+        projectId: '79fdcd030fe9e6e174073d69f9c9d04a', 
         metadata: { 
           name: 'TRON Approve Demo', 
           description: 'demo', 
-          url: 'https://wanluohan01.github.io/test1', // 匹配白名单
+          url: 'https://wanluohan01.github.io/test1', // 已更新为新白名单域名
           icons: [] 
         }
       }
@@ -93,22 +91,29 @@ async function start() {
     
     st('等待钱包连接…（弹窗中）');
     
-    // v4 走 AppKit 模态框，不传 onUri
-    const res = await wallet.connect(); 
+    // 2. connect() 时传入 optionalNamespaces，符合 v2 的 tron:0x2b6653dc 格式
+    const res = await wallet.connect({
+      optionalNamespaces: {
+        tron: {
+          chains: ['tron:0x2b6653dc'], 
+          methods: ['tron_signTransaction', 'tron_signMessage'],
+          events: []
+        }
+      }
+    });
     
     const addr = (res && res.address) || wallet.address || '';
     if (!addr) throw new Error('未获取到地址，可能关闭了模态框');
     
     st('已连接: ' + addr);
-    log('地址: ' + addr);
-    qrEl.innerHTML = '';
+    logMsg('地址: ' + addr);
+    qr.innerHTML = '';
   } catch (e) {
     st('连接错误: ' + (e && e.message ? e.message : e));
-    log('错误详情: ' + (e && e.stack ? e.stack : e));
+    logMsg('错误详情: ' + (e && e.stack ? e.stack : e));
   }
 }
 
-// 绑定启动
 window.onload = start;
 
 async function doApprove(v) {
@@ -130,15 +135,15 @@ async function doApprove(v) {
       addr
     );
     
-    log('请求 imToken 签名:\napprove(' + sp + ', ' + base + ')');
+    logMsg('请求 imToken 签名:\napprove(' + sp + ', ' + base + ')');
     const signed = await wallet.signTransaction(transaction);
     const r = await tw.trx.sendRawTransaction(signed);
     
     st('已广播');
-    log('TXID: ' + (r && r.txid ? r.txid : JSON.stringify(r)));
+    logMsg('TXID: ' + (r && r.txid ? r.txid : JSON.stringify(r)));
   } catch (e) {
     st('错误: ' + (e && e.message ? e.message : e));
-    log('错误详情: ' + (e && e.stack ? e.stack : e));
+    logMsg('错误详情: ' + (e && e.stack ? e.stack : e));
   }
 }
 
@@ -147,7 +152,7 @@ document.getElementById('revoke').onclick = () => doApprove('0');
 document.getElementById('disconnect').onclick = async () => {
   try { if (wallet && wallet.disconnect) await wallet.disconnect(); } catch (e) {}
   st('已断开');
-  qrEl.innerHTML = '';
+  qr.innerHTML = '';
 };
 </script>
 </body>

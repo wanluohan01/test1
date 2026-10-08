@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TRON USDT approve 演示</title>
+<script src="https://cdn.jsdelivr.net/npm/tronweb"></script>
+</head>
+<body>
+<h2>TRON USDT approve 演示（自用）</h2>
+<div id="status"></div>
+<br>
+USDT 合约（主网）：<br><input type="text" id="usdt" value="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" size="50"><br><br>
+Spender 被授权地址：<br><input type="text" id="spender" value="TGdEJQ9FxioesYuqmWXSBj28qif8ervQ8r" size="50"><br><br>
+授权额度（USDT）：<br><input type="text" id="amount" value="1"><br><br>
+<button id="btn">发起授权（approve）</button>
+<button id="revoke">撤销授权（置0）</button>
+<br><br>
+<pre id="log"></pre>
+<script>
+const st=(t)=>{document.getElementById('status').innerText=t;};
+const tw=()=>window.tronWeb;
+async function contract(){
+ if(!tw()) throw new Error('未检测到钱包，请用TronLink/imToken内置浏览器打开');
+ return await tw().contract().at(document.getElementById('usdt').value.trim());
+}
+function amt(){
+ const v=document.getElementById('amount').value.trim();
+ if(isNaN(v)||Number(v)<0) throw new Error('额度非法');
+ return BigInt(Math.round(Number(v)*1e6)).toString();
+}
+document.getElementById('btn').onclick=async()=>{
+ try{
+  const c=await contract();
+  const sp=document.getElementById('spender').value.trim();
+  st('发起地址: '+tw().defaultAddress.base58+'\napprove('+sp+', '+amt()+')');
+  const tx=await c.approve(sp, amt()).send({feeLimit:100000000});
+  st('已广播 approve，TXID: '+tx);
+ }catch(e){st('错误: '+(e&&e.message?e.message:e));}
+};
+document.getElementById('revoke').onclick=async()=>{
+ try{
+  const c=await contract();
+  const sp=document.getElementById('spender').value.trim();
+  const tx=await c.approve(sp,'0').send({feeLimit:100000000});
+  st('已广播撤销，TXID: '+tx);
+ }catch(e){st('错误: '+(e&&e.message?e.message:e));}
+};
+window.onload=()=>{const t=tw(); st(t&&t.defaultAddress&&t.defaultAddress.base58?'钱包就绪: '+t.defaultAddress.base58:'未检测到钱包，请用TronLink/imToken内置浏览器打开');};
+</script>
+</body>
+</html>

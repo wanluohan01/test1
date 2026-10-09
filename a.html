@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRON DApp 手机扫码交互</title>
+    <title>TRON DApp - 余额查询与转账交互</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,10 +12,9 @@
             padding: 20px;
             background-color: #f9f9f9;
             border-radius: 8px;
-            text-align: center;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
-        h2 { color: #333; }
+        h2 { color: #333; text-align: center; }
         .box {
             background: white;
             padding: 20px;
@@ -29,77 +28,157 @@
             cursor: pointer;
             border: none;
             border-radius: 4px;
-            background-color: #4CAF50;
+            background-color: #007bff;
             color: white;
+            width: 100%;
             margin-top: 10px;
         }
-        button:disabled { background-color: #ccc; cursor: not-allowed; }
-        .highlight { color: #007bff; word-break: break-all; font-weight: bold; }
+        button:hover { background-color: #0056b3; }
+        .success-btn { background-color: #4CAF50 !important; }
+        .success-btn:hover { background-color: #45a049 !important; }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .highlight { color: #007bff; font-weight: bold; word-break: break-all; }
+        .status { color: #666; font-style: italic; margin-top: 10px; word-break: break-all; }
     </style>
 </head>
 <body>
 
-    <h2>TRON 智能合约交互 - 手机扫码体验</h2>
-    <p>请使用手机上的 <span style="color: red; font-weight: bold;">TronLink App</span> 扫码打开此页面进行测试：</p>
+    <h2>TRON 智能合约与转账演示 (Nile 测试网)</h2>
 
-    <!-- 二维码展示区块 -->
+    <!-- 第一步：显示地址与余额 -->
     <div class="box">
-        <img id="qrcode" src="" alt="正在生成二维码..." style="width: 200px; height: 200px; border: 1px solid #eee; padding: 5px;">
-        <p>当前页面链接：<br><span id="urlText" class="highlight"></span></p>
+        <h3>1. 钱包账户信息</h3>
+        <p>当前钱包地址：<br><span id="account" class="highlight">未连接</span></p>
+        <p>当前 TRX 余额：<span id="balance" class="highlight">0.00 TRX</span></p>
+        <button id="refreshBtn">刷新账户与余额</button>
     </div>
 
-    <!-- 交互操作区块（扫码后在手机上显示） -->
-    <div class="box" style="text-align: left;">
-        <h3>合约交互区</h3>
+    <!-- 第二步：转账 TRX 到指定地址 -->
+    <div class="box">
+        <h3>2. 发起 TRX 转账</h3>
+        <label>接收方地址：</label>
+        <input type="text" id="toAddress" placeholder="输入接收方波场地址 (以 T 开头)">
+        <label>转账金额 (TRX)：</label>
+        <input type="number" id="amount" placeholder="例如: 10" value="1">
+        <button id="transferBtn" class="success-btn">确认转账</button>
+        <p id="transferStatus" class="status">状态：等待操作</p>
+    </div>
+
+    <!-- 第三步：调用原有合约方法 -->
+    <div class="box">
+        <h3>3. 调用 SimpleApproveTarget 合约</h3>
         <p>合约地址：<code style="word-break: break-all; font-size: 12px;">TPEbXV8AEFVoysQiwPnHUKawA9eddYeXDF</code></p>
-        <button id="callBtn" style="width: 100%;">执行 doSomething 方法</button>
-        <p id="status" style="margin-top: 10px; color: #666; font-style: italic;">状态：等待手机钱包连接...</p>
+        <button id="callContractBtn" style="background-color: #ff9800;">执行 doSomething 方法</button>
+        <p id="contractStatus" class="status">状态：等待操作</p>
     </div>
 
     <script>
         const CONTRACT_ADDRESS = "TPEbXV8AEFVoysQiwPnHUKawA9eddYeXDF";
-        
-        // 1. 自动获取当前的 GitHub Pages 线上网址（如果是本地打开也会自动适配）
-        const currentUrl = window.location.href;
-        document.getElementById('urlText').innerText = currentUrl;
 
-        // 2. 自动生成二维码图片
-        const qrImg = document.getElementById('qrcode');
-        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=` + encodeURIComponent(currentUrl);
+        const accountSpan = document.getElementById('account');
+        const balanceSpan = document.getElementById('balance');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const transferBtn = document.getElementById('transferBtn');
+        const transferStatus = document.getElementById('transferStatus');
+        const callContractBtn = document.getElementById('callContractBtn');
+        const contractStatus = document.getElementById('contractStatus');
 
-        const callBtn = document.getElementById('callBtn');
-        const statusSpan = document.getElementById('status');
-
-        // 页面加载后自动尝试检测手机端 TronLink 环境
-        window.addEventListener('load', async () => {
-            setTimeout(async () => {
-                if (window.tronWeb && window.tronWeb.defaultAddress && window.tronWeb.defaultAddress.base58) {
-                    statusSpan.innerText = "钱包已连接：" + window.tronWeb.defaultAddress.base58;
-                } else {
-                    statusSpan.innerText = "请确保在 TronLink App 内打开，或点击上方扫码";
-                }
-            }, 1000);
-        });
-
-        // 点击调用合约
-        callBtn.onclick = async () => {
+        // 初始化加载账户和余额
+        async function initWallet() {
             try {
-                if (!window.tronWeb || !window.tronWeb.defaultAddress.base58) {
-                    alert("请先在手机 TronLink 钱包中授权连接此网页！");
-                    return;
+                // 等待 tronWeb 注入
+                let attempts = 0;
+                while (!window.tronWeb && attempts < 10) {
+                    await new Promise(r => setTimeout(r, 500));
+                    attempts++;
                 }
-                statusSpan.innerText = "正在发送交易，请在钱包中签名...";
+
+                if (window.tronWeb && window.tronWeb.defaultAddress && window.tronWeb.defaultAddress.base58) {
+                    const address = window.tronWeb.defaultAddress.base58;
+                    accountSpan.innerText = address;
+
+                    // 查询 TRX 余额 (返回单位是 Sun，1 TRX = 1,000,000 Sun)
+                    const balanceInSun = await window.tronWeb.trx.getBalance(address);
+                    const balanceInTRX = window.tronWeb.fromSun(balanceInSun);
+                    balanceSpan.innerText = balanceInTRX + " TRX";
+                } else {
+                    accountSpan.innerText = "未检测到已登录的钱包";
+                    balanceSpan.innerText = "0.00 TRX";
+                }
+            } catch (err) {
+                console.error(err);
+                accountSpan.innerText = "获取账户信息失败";
+            }
+        }
+
+        // 点击刷新
+        refreshBtn.onclick = () => {
+            accountSpan.innerText = "正在刷新...";
+            initWallet();
+        };
+
+        // 点击转账
+        transferBtn.onclick = async () => {
+            const toAddress = document.getElementById('toAddress').value.trim();
+            const amountTRX = document.getElementById('amount').value.trim();
+
+            if (!toAddress) {
+                alert("请输入有效的接收方地址！");
+                return;
+            }
+            if (!amountTRX || Number(amountTRX) <= 0) {
+                alert("请输入正确的转账金额！");
+                return;
+            }
+
+            try {
+                transferStatus.innerText = "正在发起转账，请在钱包中签名...";
                 
-                const contract = await window.tronWeb.contract().at(CONTRACT_ADDRESS);
-                const tx = await contract.doSomething().send();
+                // 将 TRX 转换为 Sun
+                const amountInSun = window.tronWeb.toSun(Number(amountTRX));
                 
-                statusSpan.innerText = "调用成功！交易哈希: " + tx;
-                console.log("TxID:", tx);
+                // 调用 tronWeb 发起 TRX 转账
+                const tradeobj = await window.tronWeb.transactionBuilder.sendTrx(toAddress, amountInSun);
+                const signedtxn = await window.tronWeb.trx.sign(tradeobj);
+                const receipt = await window.tronWeb.trx.sendRawTransaction(signedtxn);
+
+                if (receipt.result) {
+                    transferStatus.innerText = "转账成功！交易哈希: " + receipt.txid;
+                    // 刷新余额
+                    setTimeout(initWallet, 3000);
+                } else {
+                    transferStatus.innerText = "转账失败: " + JSON.stringify(receipt);
+                }
             } catch (error) {
                 console.error(error);
-                statusSpan.innerText = "调用失败: " + (error.message || error);
+                transferStatus.innerText = "转账出错: " + (error.message || error);
             }
         };
+
+        // 点击调用原有合约方法
+        callContractBtn.onclick = async () => {
+            try {
+                contractStatus.innerText = "正在调用合约，请在钱包中签名...";
+                const contract = await window.tronWeb.contract().at(CONTRACT_ADDRESS);
+                const tx = await contract.doSomething().send();
+                contractStatus.innerText = "调用成功！交易哈希: " + tx;
+            } catch (error) {
+                console.error(error);
+                contractStatus.innerText = "调用失败: " + (error.message || error);
+            }
+        };
+
+        // 页面加载完成后自动初始化
+        window.addEventListener('load', () => {
+            setTimeout(initWallet, 1000);
+        });
     </script>
 </body>
 </html>

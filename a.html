@@ -3,78 +3,119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRC-20 授权与余额查询</title>
-    <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <title>TRON DApp 交互演示 (Nile 测试网)</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; }
-        .card { background: white; padding: 20px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 400px; width: 100%; text-align: left; }
-        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 14px; width: 100%; margin-top: 10px; }
-        button:hover { background: #0056b3; }
-        #qrcode { margin: 15px auto; display: flex; justify-content: center; }
-        .info { margin-bottom: 15px; font-size: 14px; }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        h2 { color: #333; }
+        button {
+            padding: 12px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: white;
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .success-btn { background-color: #4CAF50 !important; }
+        .success-btn:hover { background-color: #45a049 !important; }
+        .box {
+            background: white;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .highlight { color: #007bff; font-weight: bold; }
+        .status { color: #666; font-style: italic; }
     </style>
 </head>
 <body>
 
-    <div class="card">
-        <h2 style="text-align: center;">USDT 余额与合约授权</h2>
-        
-        <!-- 扫码区域 -->
-        <div id="qrcode"></div>
+    <h2>TRON TRC-20 & 合约交互演示</h2>
+    <p>请确保你的浏览器已安装 TronLink 钱包插件，并已切换至 <span style="color: red; font-weight: bold;">Nile 测试网</span>。</p>
 
-        <div class="info">
-            <p><strong>钱包地址：</strong><span id="walletAddress">未连接</span></p>
-            <p><strong>USDT 余额：</strong><span id="usdtBalance">0.00</span> USDT</p>
-        </div>
+    <!-- 钱包连接区块 -->
+    <div class="box">
+        <h3>1. 钱包连接</h3>
+        <button id="connectBtn">连接 TronLink 钱包</button>
+        <p>当前钱包地址：<span id="account" class="highlight">未连接</span></p>
+    </div>
 
-        <!-- 功能按钮 -->
-        <button id="connectBtn">1. 连接钱包并显示余额</button>
-        <button id="approveBtn" style="background: #ffc107; color: black;" disabled>2. 授权钱包 USDT 给合约</button>
+    <!-- 合约交互区块 -->
+    <div class="box">
+        <h3>2. 调用 SimpleApproveTarget 合约</h3>
+        <p>合约地址：<code style="word-break: break-all;">TPEbXV8AEFVoysQiwPnHUKawA9eddYeXDF</code></p>
+        <button id="callBtn" class="success-btn" disabled>执行 doSomething 方法</button>
+        <p>调用状态：<span id="status" class="status">等待连接钱包</span></p>
     </div>
 
     <script>
-        // 自动生成当前网址的二维码
-        QRCode.toCanvas(document.getElementById('qrcode'), window.location.href, { width: 150 });
+        const CONTRACT_ADDRESS = "TPEbXV8AEFVoysQiwPnHUKawA9eddYeXDF";
 
-        const USDT_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // 官方 USDT 地址
-        const CONTRACT_ADDRESS = "你的部署合约地址_HEX格式或Base58"; // <--- 填入你在 Remix 部署的合约地址
-        let tronWeb;
+        const connectBtn = document.getElementById('connectBtn');
+        const callBtn = document.getElementById('callBtn');
+        const accountSpan = document.getElementById('account');
+        const statusSpan = document.getElementById('status');
 
-        // 功能 1：连接钱包并显示 TRC-20 余额
-        document.getElementById('connectBtn').onclick = async () => {
-            if (window.tronWeb && window.tronWeb.defaultAddress.base58) {
-                tronWeb = window.tronWeb;
-                let address = tronWeb.defaultAddress.base58;
-                document.getElementById('walletAddress').innerText = address;
+        let activeTronWeb;
 
-                try {
-                    let usdtContract = await tronWeb.contract().at(USDT_ADDRESS);
-                    let balance = await usdtContract.balanceOf(address).call();
-                    // USDT 是 6 位小数，除以 10^6 还原真实金额
-                    document.getElementById('usdtBalance').innerText = tronWeb.toDecimal(balance) / 1000000;
-                    
-                    // 余额加载成功后，点亮第二步的授权按钮
-                    document.getElementById('approveBtn').disabled = false;
-                } catch (err) {
-                    alert("获取余额失败: " + err.message);
+        // 点击连接钱包
+        connectBtn.onclick = async () => {
+            statusSpan.innerText = "正在请求连接 TronLink...";
+            try {
+                // 检查浏览器是否注入了 tronLink
+                if (window.tronLink) {
+                    const res = await window.tronLink.request({ method: 'tron_requestAccounts' });
+                    if (res) {
+                        activeTronWeb = window.tronWeb;
+                    }
                 }
-            } else {
-                alert("请在 TronLink 钱包内置浏览器中打开此网页！");
+
+                // 检查 tronWeb 及默认地址
+                if (window.tronWeb && window.tronWeb.defaultAddress && window.tronWeb.defaultAddress.base58) {
+                    const address = window.tronWeb.defaultAddress.base58;
+                    accountSpan.innerText = address;
+                    statusSpan.innerText = "钱包已连接，可以开始调用";
+                    connectBtn.innerText = "已连接";
+                    connectBtn.disabled = true;
+                    callBtn.disabled = false; // 启用合约调用按钮
+                } else {
+                    statusSpan.innerText = "未检测到授权地址";
+                    alert("请检查：\n1. TronLink 插件是否已解锁。\n2. 插件网络是否处于 Nile 测试网。\n3. 请点击浏览器右上角 TronLink 插件图标手动授权。");
+                }
+            } catch (error) {
+                console.error(error);
+                statusSpan.innerText = "连接出错";
+                alert("连接失败: " + (error.message || error));
             }
         };
 
-        // 功能 2：让钱包授权 USDT 给你的合约
-        document.getElementById('approveBtn').onclick = async () => {
+        // 点击调用合约方法
+        callBtn.onclick = async () => {
             try {
-                let usdtContract = await tronWeb.contract().at(USDT_ADDRESS);
-                // 比如授权 100 USDT (100 * 10^6)
-                let approveAmount = "100000000"; 
+                statusSpan.innerText = "正在向 Nile 测试网发送交易，请在插件中签名...";
+                const web = activeTronWeb || window.tronWeb;
                 
-                let res = await usdtContract.approve(CONTRACT_ADDRESS, approveAmount).send();
-                alert("授权成功！交易哈希: " + res);
-            } catch (err) {
-                alert("授权失败: " + err.message);
+                // 加载合约并调用
+                const contract = await web.contract().at(CONTRACT_ADDRESS);
+                const tx = await contract.doSomething().send();
+                
+                statusSpan.innerText = "调用成功！交易哈希: " + tx;
+                console.log("TxID:", tx);
+            } catch (error) {
+                console.error(error);
+                statusSpan.innerText = "调用失败: " + (error.message || error);
             }
         };
     </script>

@@ -1,198 +1,120 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+<!doctype html>
+<html lang="zh">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRON 智能合约代理转账与余额查询</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 30px auto;
-            padding: 20px;
-            background-color: #f4f6f9;
-            border-radius: 8px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        }
-        h2 { color: #333; text-align: center; }
-        .box {
-            background: white;
-            padding: 20px;
-            margin: 15px 0;
-            border-radius: 8px;
-            border: 1px solid #e1e4e8;
-        }
-        button {
-            padding: 12px 20px;
-            font-size: 16px;
-            cursor: pointer;
-            border: none;
-            border-radius: 4px;
-            background-color: #007bff;
-            color: white;
-            width: 100%;
-            margin-top: 10px;
-        }
-        button:hover { background-color: #0056b3; }
-        .success-btn { background-color: #28a745 !important; }
-        .success-btn:hover { background-color: #218838 !important; }
-        input, select {
-            width: 100%;
-            padding: 10px;
-            margin: 8px 0;
-            box-sizing: border-box;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        .highlight { color: #007bff; font-weight: bold; word-break: break-all; }
-        .status { color: #555; font-style: italic; margin-top: 10px; word-break: break-all; }
-    </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Nile USDT 授权+代转</title>
+<script src="https://cdn.jsdelivr.net/npm/tronweb@5/dist/TronWeb.min.js"></script>
+<style>
+body{font:14px/1.6 system-ui;max-width:640px;margin:20px auto;padding:0 12px}
+input{width:100%;box-sizing:border-box;margin:4px 0 10px;padding:8px}
+button{width:100%;padding:10px;margin:6px 0}
+pre{background:#f5f5f5;padding:10px;overflow:auto;white-space:pre-wrap}
+.ok{color:green}.err{color:red}
+</style>
 </head>
 <body>
+<h3>连接（手机TronLink切Nile后打开本页）</h3>
+<button id="connect">连接钱包</button>
+<div>当前地址：<span id="cur">-</span></div>
+<div>当前节点：<span id="node">-</span></div>
 
-    <h2>TRON 合约代理转账 DApp</h2>
+<h3>参数</h3>
+<label>USDT合约(Nile)</label>
+<input id="usdt" value="TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf" />
+<label>Owner（被代转，TTQ16）</label>
+<input id="owner" value="TTQ16UHkWiHPoMVMuGK8n6NeUwRwWMVGuV" />
+<label>Spender（被授权，TG9XX）</label>
+<input id="spender" value="TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY" />
+<label>收款人（TABPox）</label>
+<input id="to" value="TABPoxCoSNXgWtC6H9gYLpeztiBgAsCkX6" />
+<label>金额（USDT整数，如10）</label>
+<input id="amt" value="10001" />
 
-    <!-- 第一步：账户信息与余额展示 -->
-    <div class="box">
-        <h3>1. 钱包账户信息</h3>
-        <p>当前钱包地址：<br><span id="account" class="highlight">正在请求授权...</span></p>
-        <p>TRX 余额：<span id="trxBalance" class="highlight">0.00 TRX</span></p>
-        <p>USDT (TRC-20) 余额：<span id="usdtBalance" class="highlight">0.00 USDT</span></p>
-        <button id="reconnectBtn" style="background-color: #6c757d;">重新连接 / 刷新余额</button>
-    </div>
+<h3>操作</h3>
+<button id="balance">查Owner余额 / Spender已授权额度</button>
+<button id="approve">A. 当前钱包授权Spender（用TTQ16点）</button>
+<button id="transferFrom">B. 当前钱包代转TransferFrom（用TG9XX点）</button>
 
-    <!-- 第二步：合约代理转账 -->
-    <div class="box">
-        <h3>2. 合约代理转账</h3>
-        <label>选择币种：</label>
-        <select id="coinType">
-            <option value="TRX">TRX (原生币)</option>
-            <option value="USDT">USDT (TRC-20 测试代币)</option>
-        </select>
+<pre id="log"></pre>
 
-        <label>接收方地址：</label>
-        <input type="text" id="toAddress" placeholder="输入接收方波场地址 (以 T 开头)">
-        
-        <label>转账数量：</label>
-        <input type="number" id="amount" placeholder="例如: 10" value="1">
-        
-        <button id="proxyTransferBtn" class="success-btn">通过合约代理转账</button>
-        <p id="transferStatus" class="status">状态：等待操作</p>
-    </div>
+<script>
+const $ = id => document.getElementById(id);
+const log = (m,cls='') => $('log').textContent += '\n' + (cls?('['+cls+'] '):'') + m;
 
-    <script>
-        // 【重要】请将这里替换为你刚刚通过 tronbox migrate 部署成功后拿到的合约地址！
-        const PROXY_CONTRACT_ADDRESS = "TXrLbhtAJdHiQupDuYifgUMvhcAuUi41Sn";
-        
-        // Nile 测试网官方示例 USDT 合约地址
-        const USDT_CONTRACT_ADDRESS = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"; 
+function tw(){
+  if(window.tronWeb && window.tronWeb.ready) return window.tronWeb;
+  if(window.tron && window.tron.tronWeb && window.tron.tronWeb.ready) return window.tron.tronWeb;
+  return null;
+}
+function fallbackTronWeb(){
+  return new TronWeb({ fullHost:'https://api.nileex.io' });
+}
+async function requireNile(){
+  let t = tw();
+  if(t){
+    const host = (t.fullnode && t.fullnode.host) || '';
+    if(host && !/nile/i.test(host)) throw new Error('手机钱包请切到Nile测试网后再打开本页；当前节点='+host);
+    return t;
+  }
+  // 未注入则仅做只读兜底（发交易必须钱包注入）
+  return fallbackTronWeb();
+}
+async function decimalsOf(c){
+  try { return Number(await c.decimals().call()); } catch(e){ return 6; }
+}
 
-        const accountSpan = document.getElementById('account');
-        const trxBalanceSpan = document.getElementById('trxBalance');
-        const usdtBalanceSpan = document.getElementById('usdtBalance');
-        const transferStatus = document.getElementById('transferStatus');
+$('connect').onclick = async () => {
+  try{
+    let t = tw();
+    if(!t){ t = fallbackTronWeb(); }
+    let addr = (t.defaultAddress && t.defaultAddress.base58) || '-';
+    let host = (t.fullnode && t.fullnode.host) || (t.fullNode&&t.fullNode.host) || 'fallback/api.nileex.io';
+    $('cur').textContent = addr;
+    $('node').textContent = host;
+    log('连接：'+addr+' / '+host, 'ok');
+  }catch(e){ log('连接失败：'+e.message,'err'); }
+};
 
-        // 页面加载完成后自动触发授权和数据加载
-        window.addEventListener('load', async () => {
-            setTimeout(initDApp, 1000);
-        });
+$('balance').onclick = async () => {
+  try{
+    const t = await requireNile();
+    const c = await t.contract().at($('usdt').value.trim());
+    const dec = await decimalsOf(c);
+    const bal = await c.balanceOf($('owner').value.trim()).call();
+    const allow = await c.allowance($('owner').value.trim(), $('spender').value.trim()).call();
+    log('Owner余额='+(Number(bal)/10**dec)+' USDT', 'ok');
+    log('Spender已授权='+(Number(allow)/10**dec)+' USDT', 'ok');
+  }catch(e){ log('查询失败：'+e.message,'err'); }
+};
 
-        document.getElementById('reconnectBtn').onclick = initDApp;
+$('approve').onclick = async () => {
+  try{
+    const t = await requireNile();
+    const cur = t.defaultAddress.base58;
+    if(cur !== $('owner').value.trim()) log('提示：当前钱包='+cur+'，不是Owner(TTQ16)，请切到TTQ16再点','err');
+    const c = await t.contract().at($('usdt').value.trim());
+    const dec = await decimalsOf(c);
+    const raw = BigInt(Math.floor(parseFloat($('amt').value)*10**dec));
+    const tx = await c.approve($('spender').value.trim(), raw).send({ feeLimit:100_000_000 });
+    log('approve已提交 txID='+tx, 'ok');
+    log('浏览器：https://nile.tronscan.org/#/transaction/'+tx);
+  }catch(e){ log('approve失败：'+e.message,'err'); }
+};
 
-        async function initDApp() {
-            try {
-                transferStatus.innerText = "正在请求 TronLink 授权...";
-                
-                // 1. 自动请求 TronLink 授权弹窗
-                if (window.tronLink) {
-                    await window.tronLink.request({ method: 'tron_requestAccounts' });
-                }
-
-                // 2. 检查 tronWeb 及默认地址是否就绪
-                if (window.tronWeb && window.tronWeb.defaultAddress && window.tronWeb.defaultAddress.base58) {
-                    const address = window.tronWeb.defaultAddress.base58;
-                    accountSpan.innerText = address;
-                    transferStatus.innerText = "钱包连接成功，数据已刷新";
-
-                    // 3. 查询 TRX 余额
-                    const trxSun = await window.tronWeb.trx.getBalance(address);
-                    trxBalanceSpan.innerText = window.tronWeb.fromSun(trxSun) + " TRX";
-
-                    // 4. 查询 TRC-20 (USDT) 余额
-                    try {
-                        const usdtContract = await window.tronWeb.contract().at(USDT_CONTRACT_ADDRESS);
-                        const usdtBal = await usdtContract.balanceOf(address).call();
-                        // Nile 测试网 USDT 通常为 6 位小数
-                        usdtBalanceSpan.innerText = (usdtBal / 1000000).toFixed(2) + " USDT";
-                    } catch (e) {
-                        usdtBalanceSpan.innerText = "读取 USDT 失败";
-                    }
-                } else {
-                    accountSpan.innerText = "未授权或未检测到钱包";
-                    transferStatus.innerText = "请确保在 TronLink 内置浏览器中打开并解锁";
-                }
-            } catch (err) {
-                console.error(err);
-                transferStatus.innerText = "初始化失败: " + (err.message || err);
-            }
-        }
-
-        // 点击代理转账按钮
-        document.getElementById('proxyTransferBtn').onclick = async () => {
-            const coinType = document.getElementById('coinType').value;
-            const toAddress = document.getElementById('toAddress').value.trim();
-            const amountStr = document.getElementById('amount').value.trim();
-
-            if (!toAddress) {
-                alert("请输入接收方地址！");
-                return;
-            }
-            if (!amountStr || Number(amountStr) <= 0) {
-                alert("请输入正确的转账数量！");
-                return;
-            }
-
-            try {
-                const proxyContract = await window.tronWeb.contract().at(PROXY_CONTRACT_ADDRESS);
-
-                if (coinType === "TRX") {
-                    transferStatus.innerText = "正在通过合约代理转账 TRX，请在钱包中签名...";
-                    const amountInSun = window.tronWeb.toSun(Number(amountStr));
-                    
-                    // 调用合约的 proxySendTRX 方法，并通过 callValue 传入 msg.value
-                    const tx = await proxyContract.proxySendTRX(toAddress).send({
-                        callValue: amountInSun
-                    });
-                    transferStatus.innerText = "TRX 代理转账成功！交易哈希: " + tx;
-
-                } else if (coinType === "USDT") {
-                    transferStatus.innerText = "【步骤 1/2】正在请求授权 (Approve) 给合约...";
-                    const usdtContract = await window.tronWeb.contract().at(USDT_CONTRACT_ADDRESS);
-                    const amountInUnits = BigInt(Math.floor(Number(amountStr) * 1000000));
-
-                    // 先让用户在钱包中确认授权 (Approve)
-                    await usdtContract.approve(PROXY_CONTRACT_ADDRESS, amountInUnits.toString()).send();
-                    
-                    transferStatus.innerText = "【步骤 2/2】授权成功，正在通过合约代理转账 USDT...";
-                    
-                    // 调用合约内部的 proxySendTRC20 执行 transferFrom 代理转账
-                    const tx = await proxyContract.proxySendTRC20(
-                        USDT_CONTRACT_ADDRESS, 
-                        toAddress, 
-                        amountInUnits.toString()
-                    ).send();
-
-                    transferStatus.innerText = "USDT 代理转账成功！交易哈希: " + tx;
-                }
-
-                // 交易成功后，延迟 3 秒自动刷新余额
-                setTimeout(initDApp, 3000);
-
-            } catch (error) {
-                console.error(error);
-                transferStatus.innerText = "操作失败: " + (error.message || JSON.stringify(error));
-            }
-        };
-    </script>
+$('transferFrom').onclick = async () => {
+  try{
+    const t = await requireNile();
+    const cur = t.defaultAddress.base58;
+    if(cur !== $('spender').value.trim()) log('提示：当前钱包='+cur+'，不是Spender(TG9XX)，请切到TG9XX再点','err');
+    const c = await t.contract().at($('usdt').value.trim());
+    const dec = await decimalsOf(c);
+    const raw = BigInt(Math.floor(parseFloat($('amt').value)*10**dec));
+    const tx = await c.transferFrom($('owner').value.trim(), $('to').value.trim(), raw).send({ feeLimit:100_000_000 });
+    log('transferFrom已提交 txID='+tx, 'ok');
+   log('浏览器：https://nile.tronscan.org/#/transaction/'+tx);
+  }catch(e){ log('transferFrom失败：'+e.message,'err'); }
+};
+</script>
 </body>
 </html>

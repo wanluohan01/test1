@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nile USDT Approve · 钱包内置浏览器版</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      width: 100%;
+      max-width: 460px;
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px 24px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+    }
+    h2 { margin-bottom: 4px; font-size: 22px; }
+    .network { color: #27ae60; font-size: 13px; margin-bottom: 24px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #333; margin: 16px 0 6px; }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d0d5dd;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fff;
+      transition: border-color 0.2s;
+    }
+    input:focus { outline: none; border-color: #2563eb; }
+    input[readonly] { background: #f8fafc; color: #475569; }
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 20px;
+      background: #2563eb;
+      color: #fff;
+      transition: opacity 0.2s;
+    }
+    button:disabled { background: #cbd5e1; cursor: not-allowed; }
+    #log {
+      margin-top: 20px;
+      padding: 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .ok { color: #16a34a; }
+    .err { color: #dc2626; }
+    .warn { color: #d97706; }
+    .btn-group { display: flex; gap: 10px; margin-top: 12px; }
+    .btn-group button { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>TRC20 USDT 授权</h2>
+    <p class="network">🌐 Nile Testnet</p>
+
+    <label>USDT 合约（固定）</label>
+    <input readonly value="TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf" />
+
+    <label>trxB（当前钱包 / 授权人）</label>
+    <input id="trxB" readonly placeholder="连接后自动获取" />
+
+    <label>trxA（被授权地址 / spender）</label>
+    <input id="trxA" placeholder="T..." />
+
+    <label>授权数量（USDT）</label>
+    <input id="amount" type="number" min="0" step="0.000001" placeholder="例：1" />
+
+    <div class="btn-group">
+      <button id="connectBtn">连接

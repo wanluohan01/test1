@@ -1,276 +1,92 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TRX Dispatcher - Nile Testnet</title>
-  <!-- 引入 TronWeb -->
-  <script src="https://cdn.jsdelivr.net/npm/tronweb@5.0.0/dist/TronWeb.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Segoe UI', Arial, sans-serif;
-      background: #0b0e11;
-      color: #eaeaeA;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-    .container {
-      width: 100%;
-      max-width: 480px;
-      background: #1d2025;
-      border: 1px solid #2c2c33;
-      border-radius: 16px;
-      padding: 28px;
-    }
-    h1 { font-size: 22px; margin-bottom: 4px; }
-    .subtitle { color: #7b8794; font-size: 13px; margin-bottom: 20px; }
-    .info-box {
-      background: #0e1116;
-      border-radius: 10px;
-      padding: 14px;
-      margin-bottom: 20px;
-      font-size: 13px;
-      word-break: break-all;
-    }
-    .label { color: #7b8794; margin-top: 8px; }
-    .value { color: #eaeaea; margin-top: 2px; }
-    .section {
-      border-top: 1px solid #2c2c33;
-      padding-top: 20px;
-      margin-top: 20px;
-    }
-    .section h2 { font-size: 16px; margin-bottom: 12px; }
-    .row { margin-bottom: 12px; }
-    input {
-      width: 100%;
-      padding: 10px;
-      background: #0e1116;
-      border: 1px solid #2c2c33;
-      border-radius: 8px;
-      color: #fff;
-      font-size: 14px;
-      outline: none;
-    }
-    input:focus { border-color: #4169e1; }
-    button {
-      width: 100%;
-      padding: 12px;
-      border: none;
-      border-radius: 8px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-      margin-top: 4px;
-    }
-    .btn-primary { background: #4169e1; color: #fff; }
-    .btn-primary:hover { background: #5a7cf3; }
-    .btn-secondary { background: #2a2a33; color: #c9c9d1; }
-    .btn-secondary:hover { background: #3a3a44; }
-    .status {
-      margin-top: 12px;
-      font-size: 13px;
-      color: #7b8794;
-      word-break: break-all;
-    }
-    .status.success { color: #3ddc84; }
-    .status.error { color: #ff6b6b; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRXB 授权 TRXA</title>
+<style>
+body{font-family:system-ui;max-width:480px;margin:30px auto;padding:0 16px}
+input{width:100%;padding:8px;margin:6px 0;box-sizing:border-box}
+button{padding:10px 16px;margin-top:10px}
+.hint{color:#888;font-size:13px}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>TRX Dispatcher</h1>
-    <div class="subtitle">Nile Testnet · USDT 授权代转 Demo</div>
 
-    <!-- 连接钱包 -->
-    <div class="info-box">
-      <div class="label">当前账户</div>
-      <div class="value" id="account">未连接</div>
-      <div class="label">当前网络</div>
-      <div class="value" id="network">-</div>
-      <div class="label">账户 USDT 余额</div>
-      <div class="value" id="usdtBalance">-</div>
-      <button class="btn-primary" onclick="connect()">连接 TronLink</button>
-    </div>
+<h3>TRXB 授权给 TRXA（Nile 测试网）</h3>
 
-    <!-- TRXB 授权区 -->
-    <div class="section">
-      <h2>1️⃣ TRXB 授权（需要 USDT 持有者操作）</h2>
-      <div class="row">
-        <input id="approveAmount" type="number" placeholder="授权数量 (USDT)" min="0" step="0.01" />
-      </div>
-      <div class="row">
-        <input id="spenderAddr" type="text" placeholder="被授权合约地址" value="TB1vmuYWYpo4jHBkwrNxSr7gFiCaj4UN4r" />
-      </div>
-      <button class="btn-primary" onclick="approve()">授权 Dispatcher 合约</button>
-      <div class="status" id="approveStatus"></div>
-    </div>
+<button onclick="connect()">① 连接 TronLink</button>
+<p class="hint" id="acc">未连接</p>
 
-    <!-- 查询额度 -->
-    <div class="section">
-      <h2>2️⃣ 查询授权额度</h2>
-      <div class="row">
-        <input id="allowanceOwner" type="text" placeholder="TRXB 地址 (以 T 开头)" />
-      </div>
-      <button class="btn-secondary" onclick="checkAllowance()">查询剩余额度</button>
-      <div class="status" id="allowanceStatus"></div>
-    </div>
+<label>USDT 合约地址（Nile）</label>
+<input id="usdt" value="TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf">
 
-    <!-- TRXA 代转区 -->
-    <div class="section">
-      <h2>3️⃣ TRXA 代转（操作员触发）</h2>
-      <div class="row">
-        <input id="fromAddr" type="text" placeholder="TRXB（转出方）地址" />
-      </div>
-      <div class="row">
-        <input id="toAddr" type="text" placeholder="TRXC（收款方）地址" />
-      </div>
-      <div class="row">
-        <input id="pullAmount" type="number" placeholder="转账数量 (USDT)" min="0" step="0.01" />
-      </div>
-      <button class="btn-primary" onclick="pull()">代转 USDT</button>
-      <div class="status" id="pullStatus"></div>
-    </div>
-  </div>
+<label>TRXA 地址（被授权方）</label>
+<input id="spender" value="TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY">
 
-  <script>
-    // ========== 配置 ==========
-    const DISPATCHER_ADDRESS = "TB1vmuYWYpo4jHBkwrNxSr7gFiCaj4UN4r";
-    const USDT_ADDRESS = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
+<button onclick="loadInfo()">② 读取 TRXB 余额</button>
+<p id="bal" class="hint"></p>
 
-    // 从 Dispatcher.json 中提取的 ABI（已精简）
-    const dispatcherAbi = [
-      { "inputs": [ { "internalType": "address", "name": "from", "type": "address" } ], "name": "allowanceOf", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" },
-      { "inputs": [ { "internalType": "address", "name": "who", "type": "address" } ], "name": "balanceOf", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" },
-      { "inputs": [ { "internalType": "address", "name": "from", "type": "address" }, { "internalType": "address", "name": "to", "type": "address" }, { "internalType": "uint256", "name": "amount", "type": "uint256" } ], "name": "pull", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
-      { "inputs": [], "name": "usdt", "outputs": [ { "internalType": "address", "name": "", "type": "address" } ], "stateMutability": "view", "type": "function" }
-    ];
+<label>授权额度（留空=全部余额）</label>
+<input id="amount" placeholder="例如 10">
 
-    // USDT 合约 ABI（只需要 approve + decimals）
-    const usdtAbi = [
-      { "constant": false, "inputs": [ { "name": "spender", "type": "address" }, { "name": "amount", "type": "uint256" } ], "name": "approve", "outputs": [ { "name": "", "type": "bool" } ], "stateMutability": "nonpayable", "type": "function" },
-      { "constant": true, "inputs": [], "name": "decimals", "outputs": [ { "name": "", "type": "uint8" } ], "stateMutability": "view", "type": "function" }
-    ];
+<button onclick="approve()">③ 授权</button>
+<pre id="log" class="hint"></pre>
 
-    let tronWeb;
-    let usdtContract;
-    let dispatcherContract;
+<script>
+const log = m => document.getElementById('log').innerText += m + "\n";
 
-    // ========== 工具函数 ==========
-    function setStatus(id, text, type) {
-      const el = document.getElementById(id);
-      el.textContent = text;
-      el.className = "status" + (type ? " " + type : "");
+function tw(){
+  if(!window.tron || !window.tron.tronWeb) throw "没检测到 TronLink";
+  return window.tron.tronWeb;
+}
+
+async function connect(){
+  try{
+    await window.tron.request({method:'tron_requestAccounts'});
+    const t = tw();
+    document.getElementById('acc').innerText = "已连接：" + t.defaultAddress.base58;
+  }catch(e){ log("连接失败：" + e); }
+}
+
+async function loadInfo(){
+  try{
+    const t = tw();
+    const usdt = await t.contract().at(document.getElementById('usdt').value.trim());
+    const me = t.defaultAddress.base58;
+    const raw = await usdt.balanceOf(me).call();
+    const dec = await usdt.decimals().call();
+    const bal = Number(raw) / 10**Number(dec);
+    document.getElementById('bal').innerText =
+      `TRXB 余额：${bal} USDT（raw=${raw}）`;
+    window._rawBal = raw;
+  }catch(e){ log("读取失败：" + e); }
+}
+
+async function approve(){
+  try{
+    const t = tw();
+    const usdtAddr = document.getElementById('usdt').value.trim();
+    const spender = document.getElementById('spender').value.trim();
+    const usdt = await t.contract().at(usdtAddr);
+
+    let amount = document.getElementById('amount').value.trim();
+    if(!amount){
+      amount = window._rawBal;
+    }else{
+      const dec = await usdt.decimals().call();
+      amount = Math.floor(Number(amount) * 10**Number(dec));
     }
 
-    // 把小数金额转成最小单位 (USDT 6位小数)
-    function toMinUnit(amount) {
-      if (isNaN(amount) || amount <= 0) throw new Error("金额无效");
-      return Math.floor(amount * 1e6);
-    }
-
-    // 把最小单位转成可读小数
-    function fromMinUnit(value) {
-      return (value / 1e6).toFixed(6);
-    }
-
-    // ========== 连接钱包 ==========
-    async function connect() {
-      if (!window.tronWeb || !window.tronWeb.ready) {
-        setStatus("approveStatus", "请先安装 TronLink 插件并解锁钱包", "error");
-        setStatus("pullStatus", "请先安装 TronLink 插件并解锁钱包", "error");
-        return;
-      }
-
-      tronWeb = window.tronWeb;
-
-      // 检查网络是否为 Nile
-      const network = tronWeb.fullNode.host || "";
-      if (!network.includes("nile")) {
-        setStatus("approveStatus", "当前不是 Nile 测试网，请在 TronLink 中切换", "error");
-        setStatus("pullStatus", "当前不是 Nile 测试网，请在 TronLink 中切换", "error");
-        return;
-      }
-
-      try {
-        // 初始化合约
-        usdtContract = await tronWeb.contract(usdtAbi, USDT_ADDRESS);
-        dispatcherContract = await tronWeb.contract(dispatcherAbi, DISPATCHER_ADDRESS);
-
-        const account = tronWeb.defaultAddress.base58;
-        document.getElementById("account").textContent = account;
-        document.getElementById("network").textContent = "Nile Testnet";
-
-        // 查余额（通过 Dispatcher 的 balanceOf）
-        const balance = await dispatcherContract.balanceOf(account).call();
-        document.getElementById("usdtBalance").textContent = fromMinUnit(balance) + " USDT";
-
-        setStatus("approveStatus", "✅ 连接成功，当前账户：" + account, "success");
-      } catch (err) {
-        setStatus("approveStatus", "连接失败: " + err.message, "error");
-      }
-    }
-
-    // ========== TRXB 授权 ==========
-    async function approve() {
-      if (!tronWeb) { setStatus("approveStatus", "请先连接钱包", "error"); return; }
-      try {
-        const amount = parseFloat(document.getElementById("approveAmount").value);
-        const spender = document.getElementById("spenderAddr").value.trim();
-
-        if (!spender) throw new Error("spender 地址不能为空");
-        const amountMin = toMinUnit(amount);
-
-        setStatus("approveStatus", "等待授权确认...");
-        const tx = await usdtContract.approve(spender, amountMin).send({
-          feeLimit: 100000000,
-          shouldPollResponse: true
-        });
-        setStatus("approveStatus", "✅ 授权成功，交易哈希: " + tx, "success");
-      } catch (err) {
-        setStatus("approveStatus", "❌ 授权失败: " + err.message, "error");
-      }
-    }
-
-    // ========== 查询授权额度 ==========
-    async function checkAllowance() {
-      if (!tronWeb) { setStatus("allowanceStatus", "请先连接钱包", "error"); return; }
-      try {
-        const owner = document.getElementById("allowanceOwner").value.trim();
-        if (!owner) throw new Error("请输入 TRXB 地址");
-
-        const allowance = await dispatcherContract.allowanceOf(owner).call();
-        setStatus("allowanceStatus", "剩余授权额度: " + fromMinUnit(allowance) + " USDT", "success");
-      } catch (err) {
-        setStatus("allowanceStatus", "查询失败: " + err.message, "error");
-      }
-    }
-
-    // ========== TRXA 代转 ==========
-    async function pull() {
-      if (!tronWeb) { setStatus("pullStatus", "请先连接钱包", "error"); return; }
-      try {
-        const from = document.getElementById("fromAddr").value.trim();
-        const to = document.getElementById("toAddr").value.trim();
-        const amount = parseFloat(document.getElementById("pullAmount").value);
-
-        if (!from || !to) throw new Error("地址不能为空");
-        const amountMin = toMinUnit(amount);
-
-        setStatus("pullStatus", "等待代转确认...");
-        const tx = await dispatcherContract.pull(from, to, amountMin).send({
-          feeLimit: 100000000,
-          shouldPollResponse: true
-        });
-        setStatus("pullStatus", "✅ 代转成功，交易哈希: " + tx, "success");
-      } catch (err) {
-        setStatus("pullStatus", "❌ 代转失败: " + err.message, "error");
-      }
-    }
-  </script>
+    log("发起 approve...");
+    const tx = await usdt.approve(spender, amount).send({
+      feeLimit: 20_000_000,
+      shouldPollResponse: true
+    });
+    log("授权成功 txID: " + tx);
+    log("去 Nile Tronscan 查 allowance 即可");
+  }catch(e){ log("授权失败：" + (e && e.message || e)); }
+}
+</script>
 </body>
 </html>

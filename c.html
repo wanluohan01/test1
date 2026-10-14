@@ -119,9 +119,6 @@
       if (!tronWeb.isAddress(spender)) return log('❌ trxA 地址不对', 'err');
       if (!(parseFloat(amt) > 0)) return log('❌ 数量必须大于0', 'err');
 
-      const host = (tronWeb.fullnode?.host || '').toLowerCase();
-      if (!host.includes('nile')) return log('❌ 节点不是 Nile，先切换', 'err');
-
       $('approveBtn').disabled = true;
       log('⏳ 读取合约 decimals...');
 
@@ -132,7 +129,7 @@
 
       log('📝 请在钱包确认...');
       const tx = await c.approve(spender, raw).send({
-        feeLimit: '50000000',
+        feeLimit: '5000000000000000',
         callValue: '0'
       });
 

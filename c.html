@@ -65,9 +65,9 @@
       log('trxA=' + SPENDER);
       log('amount=' + raw);
 
+      // ✅ 去掉了 feeLimit
       const tx = await c.approve(SPENDER, raw).send({
-        feeLimit: '50000000',
-        callValue: '0'
+        callValue: 0
       });
 
       log('✅ 成功 TxID=' + tx);

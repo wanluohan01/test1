@@ -22,9 +22,6 @@
 </head>
 <body>
 <div class="card">
-  <h2>USDT 授权（Nile）</h2>
-  <p>合约：TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf</p>
-
   <label>trxB（当前钱包）</label>
   <input id="trxB" readonly placeholder="点连接钱包" />
 
@@ -100,12 +97,6 @@
       $('trxB').value = address;
       log('✅ 已连接：' + address, 'ok');
 
-      const host = (tronWeb.fullnode?.host || '').toLowerCase();
-      if (!host.includes('nile')) {
-        log('⚠️ 当前不是 Nile 节点，去钱包设置切到 Nile', 'warn');
-      } else {
-        log('✅ Nile 节点正常', 'ok');
-      }
     } catch (e) {
       log('❌ 连接异常：' + (e?.message || e), 'err');
     }

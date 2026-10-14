@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>USDT Dispatcher - 纯前端私钥版</title>
+  <script src="https://cdn.jsdelivr.net/npm/bignumber.js/bignumber.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tronweb@5/dist/TronWeb.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+    .section { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #ddd; }
+    input { width: 100%; box-sizing: border-box; padding: 6px; margin: 4px 0; }
+    button { padding: 8px 14px; cursor: pointer; margin-right: 6px; }
+    .warn { color: #d97706; font-size: 13px; }
+    pre { background: #f6f8fa; padding: 10px; border-radius: 6px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+<h1>USDT Dispatcher - 纯前端私钥版（Nile 测试网）</h1>
+
+<div class="section">
+  <h3>0. 私钥配置</h3>
+  <label>TRXA 资金方私钥（授权用）</label>
+  <input id="trxaPriv" placeholder="TRXA 私钥，必须匹配 TG9XX...">
+
+  <label>TRXB 操作方私钥（代转用）</label>
+  <input id="trxbPriv" placeholder="TRXB 私钥，测试网可随便填">
+
+  <p class="warn">⚠️ 私钥只在浏览器内存中签名，不会上传到任何服务器。测试网专用，勿填主网有钱的私钥。</p>
+</div>
+
+<div class="section">
+  <h3>1. 授权：TRXA approve Dispatcher</h3>
+  <button onclick="authorize()">用 TRXA 私钥授权</button>
+</div>
+
+<div class="section">
+  <h3>2. 代转：TRXB 触发 dispatcher.pull</h3>
+  <label>TRXA 资金方地址（from）</label>
+  <input id="pullFrom" value="TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY">
+
+  <label>TRXC 收款方地址（to）</label>
+  <input id="pullTo" placeholder="任意 TRC20 地址">
+
+  <label>USDT 数量</label>
+  <input id="pullAmount" placeholder="例如 10">
+
+  <button onclick="pull()">用 TRXB 私钥代转</button>
+</div>
+
+<div class="section">
+  <h3>3. 链上查询</h3>
+  <input id="queryAddress" placeholder="输入任意地址，如 TRXA 资金方地址">
+  <button onclick="balance()">查 USDT 余额</button>
+  <button onclick="allowance()">查 Dispatcher 授权额度</button>
+</div>
+
+<pre id="result"></pre>
+
+<script>
+// ======== 配置 ========
+const NILE = 'https://nile.trongrid.io';
+const USDT = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';          // Nile 测试网 USDT
+const DISPATCHER = 'TB1vmuYWYpo4jHBkwrNxSr7gFiCaj4UN4r';  // Dispatcher 合约
+const TRXA = 'TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY';        // 你的固定 TRXA
+
+// ======== ABI ========
+const usdtAbi = [
+  {"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"type":"function"},
+  {"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},
+  {"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"type":"function"}
+];
+
+const dispatcherAbi = [
+  {"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"name":"pull","outputs":[{"name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"}
+];
+
+// ======== 工具 ========
+function setResult(msg) {
+  document.getElementById('result').textContent = msg;
+}
+
+// 创建带私钥的 TronWeb 实例
+function newTw(priv) {
+  return new TronWeb({ fullHost: NILE, privateKey: priv });
+}
+
+// 读取 TRXA 私钥，并校验是否匹配固定地址
+function getTrxaTw() {
+  const priv = document.getElementById('trxaPriv').value.trim();
+  if (!priv) throw new Error('请先输入 TRXA 私钥');
+  const tw = newTw(priv);
+  if (tw.defaultAddress.base58 !== TRXA) {
+    throw new Error('TRXA 私钥不匹配固定地址 ' + TRXA + '，当前推导地址：' + tw.defaultAddress.base58);
+  }
+  return tw;
+}
+
+// 读取 TRXB 私钥
+function getTrxbTw() {
+  const priv = document.getElementById('trxbPriv').value.trim();
+  if (!priv) throw new Error('请先输入 TRXB 私钥');
+  return newTw(priv);
+}
+
+// 只读查询实例（不需要私钥）
+let readTw = null;
+function getReadTw() {
+  if (!readTw) {
+    try {
+      readTw = new TronWeb({ fullHost: NILE });
+    } catch (e) {
+      // 如果无密钥实例失败，则退化为用 TRXB 实例（需要输入私钥）
+      readTw = getTrxbTw();
+    }
+  }
+  return readTw;

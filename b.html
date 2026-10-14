@@ -147,7 +147,7 @@
       console.log(msg);
     }
   
-    // 连接钱包
+    // 连接钱包（修复 Unknown method called）
     async function connect() {
       try {
         const provider = findProvider();
@@ -156,24 +156,57 @@
           return;
         }
   
-        let accounts = null;
-        if (provider.request) {
-          accounts = await provider.request({ method: 'eth_requestAccounts' });
+        // 获取 tronWeb 实例
+        tronWeb = provider.tronWeb || provider;
+  
+        // 如果钱包还没就绪，稍等片刻再取
+        if (!tronWeb || !tronWeb.ready) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          tronWeb = provider.tronWeb || provider;
         }
   
-        tronWeb = provider.tronWeb;
-        currentAddress = accounts?.[0] || tronWeb.defaultAddress?.base58;
+        let addr = null;
   
-        if (!currentAddress) {
-          log('❌ 获取地址失败，请在钱包中解锁', 'err');
+        // 1）钱包已解锁且有地址：直接使用，不调用 request
+        if (tronWeb && tronWeb.ready && tronWeb.defaultAddress?.base58) {
+          addr = tronWeb.defaultAddress.base58;
+        }
+  
+        // 2）没有地址才尝试主动请求连接
+        if (!addr && provider && typeof provider.request === 'function') {
+          // 优先尝试 TRON 原生方法
+          try {
+            const res = await provider.request({ method: 'tron_requestAccounts' });
+            addr = Array.isArray(res) ? res[0] : (res?.address || null);
+          } catch (e1) {
+            console.warn('tron_requestAccounts 忽略:', e1);
+            // 失败后再试 eth_requestAccounts
+            try {
+              const res2 = await provider.request({ method: 'eth_requestAccounts' });
+              addr = Array.isArray(res2) ? res2[0] : (res2?.address || null);
+            } catch (e2) {
+              // 两个方法都不支持：不再抛出错误，走最后检查
+              console.warn('eth_requestAccounts 忽略:', e2);
+            }
+          }
+        }
+  
+        // 3）有些钱包请求后才会填充 defaultAddress，再检查一次
+        if (!addr && tronWeb && tronWeb.defaultAddress?.base58) {
+          addr = tronWeb.defaultAddress.base58;
+        }
+  
+        if (!addr) {
+          log('❌ 无法获取地址，请在 TronLink 中解锁并连接后重试', 'err');
           return;
         }
   
+        currentAddress = addr;
         document.getElementById('trxB').value = currentAddress;
         log('✅ 已连接钱包：' + currentAddress, 'ok');
   
         // 节点提示
-        const node = tronWeb.fullnode?.host || '';
+        const node = tronWeb.fullnode?.host || tronWeb.fullNode?.host || '';
         if (!/nile/i.test(node)) {
           log('⚠️ 当前节点不是 Nile，请在钱包切换', 'warn');
         }
@@ -279,6 +312,6 @@
         connect();
       }
     });
-</script>
+  </script>
 </body>
 </html>

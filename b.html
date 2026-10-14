@@ -115,172 +115,170 @@
   </div>
 
   <script>
-    // ========== 配置 ==========
-    const USDT_CONTRACT = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'; // Nile 测试网 USDT
+  const USDT_NILE = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
+  let tronWeb = null;
+  let currentAddress = null;
 
-    // ========== 状态 ==========
-    let provider = null;
-    let tronWeb = null;
-    let currentAddress = null;
-
-    const logEl = document.getElementById('log');
-    const connectBtn = document.getElementById('connectBtn');
-    const approveBtn = document.getElementById('approveBtn');
-
-    // ---------- 日志 ----------
-    function log(msg, type = '') {
-      const div = document.createElement('div');
-      div.className = `line ${type}`;
-      div.textContent = msg;
-      logEl.appendChild(div);
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    // ---------- 检测钱包注入 ----------
-    function findProvider() {
-      // 优先 window.tron（手机钱包 / 内置浏览器常用）
-      if (window.tron && window.tron.tronWeb) return window.tron;
-      // 其次 window.tronLink（桌面插件常用）
+  // 找钱包注入对象（兼容电脑插件和手机钱包）
+  function findProvider() {
+    if (typeof window !== 'undefined') {
       if (window.tronLink && window.tronLink.tronWeb) return window.tronLink;
-      return null;
+      if (window.tron && window.tron.tronWeb) return window.tron;
     }
+    return null;
+  }
 
-    // ---------- 连接钱包 ----------
-    async function connect() {
-      try {
-        provider = findProvider();
+  // 核心：精准换算最小单位（防浮点数精度丢失），返回字符串
+  function toBaseUnits(amountStr, decimals) {
+    const [intPart = '0', fracPartRaw = ''] = String(amountStr).split('.');
+    const fracPart = (fracPartRaw + '0'.repeat(decimals)).slice(0, decimals);
+    let combined = (intPart + fracPart).replace(/^0+(?=\d)/, '');
+    return combined === '' ? '0' : combined;
+  }
 
-        if (!provider) {
-          alert('未检测到 TRON 钱包，请使用 TronLink 浏览器插件或手机钱包浏览器');
-          log('未检测到钱包注入', 'err');
-          return;
-        }
+  function log(msg, type) {
+    const box = document.getElementById('log');
+    const div = document.createElement('div');
+    div.textContent = msg;
+    if (type === 'err') div.style.color = '#f53f3f';
+    if (type === 'ok') div.style.color = '#00b42a';
+    if (type === 'warn') div.style.color = '#ff7d00';
+    box.appendChild(div);
+    console.log(msg);
+  }
 
-        // 如果钱包已经解锁，直接拿地址
-        const tw = provider.tronWeb;
-        if (tw && tw.ready) {
-          tronWeb = tw;
-          currentAddress = tw.defaultAddress?.base58 || '';
-        }
-
-        // 如果还没拿到，尝试通过 EIP-1193 请求授权
-        if (!currentAddress && provider.request) {
-          try {
-            const accounts = await provider.request({ method: 'eth_requestAccounts' });
-            if (accounts && accounts.length > 0) {
-              currentAddress = accounts[0];
-              // 重新赋值 tronWeb（某些情况下这里才有 ready）
-              tronWeb = provider.tronWeb || provider.tron;
-            }
-          } catch (e) {
-            log('授权请求被取消或失败', 'warn');
-          }
-        }
-
-        // 最后兜底：直接从 tronWeb.defaultAddress 再试一次
-        if (!currentAddress && tronWeb) {
-          currentAddress = tronWeb.defaultAddress?.base58 || '';
-        }
-
-        if (!currentAddress) {
-          log('无法获取地址，请确保钱包已解锁', 'err');
-          return;
-        }
-
-        // 显示 trxB
-        document.getElementById('trxB').value = currentAddress;
-        log(`✅ 已连接钱包：${currentAddress}`, 'ok');
-
-        // 网络检查（仅提示）
-        const node = (tronWeb && (tronWeb.fullnode?.host || tronWeb.fullNode?.host)) || '';
-        log(`当前连接节点：${node || '未知'}`);
-        if (node && !/nile/i.test(node)) {
-          log('⚠️ 当前节点不是 Nile，请在钱包中切换到 Nile Testnet', 'warn');
-        }
-
-        approveBtn.disabled = false;
-      } catch (e) {
-        log('连接失败：' + (e?.message || e), 'err');
+  // 连接钱包
+  async function connect() {
+    try {
+      const provider = findProvider();
+      if (!provider) {
+        log('❌ 未检测到钱包，请用钱包内置浏览器打开', 'err');
+        return;
       }
+
+      let accounts = null;
+      if (provider.request) {
+        accounts = await provider.request({ method: 'eth_requestAccounts' });
+      }
+
+      tronWeb = provider.tronWeb;
+      currentAddress = accounts?.[0] || tronWeb.defaultAddress?.base58;
+
+      if (!currentAddress) {
+        log('❌ 获取地址失败，请在钱包中解锁', 'err');
+        return;
+      }
+
+      document.getElementById('trxB').value = currentAddress;
+      log('✅ 已连接钱包：' + currentAddress, 'ok');
+
+      // 节点提示
+      const node = tronWeb.fullnode?.host || '';
+      if (!/nile/i.test(node)) {
+        log('⚠️ 当前节点不是 Nile，请在钱包切换', 'warn');
+      }
+    } catch (e) {
+      log('❌ 连接失败：' + (e?.message || e), 'err');
+    }
+  }
+
+  // 安全授权（先清零再授权）
+  async function safeApprove(contract, spender, rawAmountStr) {
+    const owner = currentAddress;
+    // 读取当前已授权额度
+    const currentAllowance = (await contract.allowance(owner, spender).call()).toString();
+
+    // 如果当前额度不为0且不等于新额度，先清零
+    if (currentAllowance !== '0' && currentAllowance !== rawAmountStr) {
+      log('🔄 检测到旧授权，先清零...');
+      // 【关键】金额传字符串
+      await contract.approve(spender, '0').send({
+        feeLimit: '50000000', 
+        callValue: '0'
+      });
+      log('✅ 清零成功');
     }
 
-    // ---------- 执行 Approve ----------
-    async function approve() {
-      try {
-        // 读输入
-        const trxA = document.getElementById('trxA').value.trim();
-        const amount = document.getElementById('amount').value;
+    // 执行新授权
+    return contract.approve(spender, rawAmountStr).send({
+      feeLimit: '50000000', 
+      callValue: '0'
+    });
+  }
 
-        // 校验
-        if (!tronWeb || !currentAddress) {
-          log('请先连接钱包', 'err');
-          return;
-        }
-        if (!tronWeb.isAddress(trxA)) {
-          log('❌ trxA 地址格式不合法', 'err');
-          return;
-        }
-        if (!(parseFloat(amount) > 0)) {
-          log('❌ 授权数量必须大于 0', 'err');
-          return;
-        }
+  // 确认授权
+  async function approve() {
+    try {
+      if (!tronWeb || !currentAddress) {
+        log('❌ 请先连接钱包', 'err');
+        return;
+      }
 
-        // 创建合约实例（USDT 合约固定）
-        log('正在读取合约 decimals...');
-        const contract = await tronWeb.contract().at(USDT_CONTRACT);
-        const decimalsResult = await contract.decimals().call();
-        const decimals = Number(decimalsResult) || 6;
-        log(`decimals = ${decimals}`);
+      const trxA = document.getElementById('trxA').value.trim();
+      const amount = document.getElementById('amount').value;
 
-        // 计算最小单位金额
-        const rawAmount = BigInt(Math.round(parseFloat(amount) * Math.pow(10, decimals)));
-        log(`授权金额（最小单位）：${rawAmount.toString()}`);
+      if (!tronWeb.isAddress(trxA)) {
+        log('❌ trxA 地址不合法', 'err');
+        return;
+      }
+      if (!(parseFloat(amount) > 0)) {
+        log('❌ 授权数量必须大于 0', 'err');
+        return;
+      }
 
-        // 发起 approve
-        log('请在钱包中确认这笔授权...');
-        const tx = await contract.approve(trxA, rawAmount.toString()).send({
-          feeLimit: 100_000_000,      // 能量上限 100 TRX，测试网够用
-          callValue: 0,
-          shouldPollResponse: true    // 等待上链返回
-        });
+      log('⏳ 正在读取合约 decimals...');
+      const contract = await tronWeb.contract().at(USDT_NILE);
+      const decimals = Number(await contract.decimals().call()) || 6;
+      
+      log(`decimals = ${decimals}`);
 
-        log(`✅ Approve 成功！TxID: ${tx}`, 'ok');
-        log(`🔍 浏览器查看：https://nile.tronscan.org/#/transaction/${tx}`, 'ok');
-      } catch (e) {
-        // 用户取消或合约错误
+      // 换算金额并强制转字符串
+      const rawAmountStr = toBaseUnits(amount, decimals);
+      log(`授权金额（最小单位）：${rawAmountStr}`);
+      log('📝 请在钱包中确认这笔授权...');
+
+      // 调用安全授权
+      const tx = await safeApprove(contract, trxA, rawAmountStr);
+
+      log('✅ 授权成功！TxID: ' + tx, 'ok');
+      log('🔍 浏览器查看：https://nile.tronscan.org/#/transaction/' + tx, 'ok');
+
+    } catch (e) {
+      // 细化手机端错误提示
+      if (e?.message?.includes('Invalid transaction provided')) {
+        log('❌ 授权失败：参数类型被钱包拦截（已修复，请重试）', 'err');
+      } else if (e?.message?.includes('Confirmation declined')) {
+        log('❌ 授权失败：用户在钱包中拒绝了签名', 'err');
+      } else {
         log('❌ 授权失败：' + (e?.message || e), 'err');
       }
     }
+  }
 
-    // ---------- 监听账户切换 ----------
-    function watchAccountChange() {
-      try {
-        if (window.tron && window.tron.tronWeb) {
-          window.tron.tronWeb.on?.('accountsChanged', (addr) => {
-            if (addr) {
-              currentAddress = addr;
-              document.getElementById('trxB').value = addr;
-              log('账户已切换：' + addr, 'warn');
-            }
-          });
+  // 绑定事件
+  document.getElementById('connectBtn').onclick = connect;
+  document.getElementById('approveBtn').onclick = approve;
+
+  // 监听账户切换
+  if (typeof window !== 'undefined' && window.tron?.tronWeb) {
+    try {
+      window.tron.tronWeb.on?.('accountsChanged', (addr) => {
+        if (addr) {
+          currentAddress = addr;
+          document.getElementById('trxB').value = addr;
+          log('🔄 账户已切换：' + addr, 'warn');
         }
-      } catch (e) {
-        // 忽略监听失败
-      }
+      });
+    } catch (_) {}
+  }
+
+  // 页面加载时自动尝试连接
+  window.addEventListener('load', () => {
+    const provider = findProvider();
+    if (provider && provider.tronWeb && provider.tronWeb.ready) {
+      connect();
     }
-
-    // ---------- 初始化 ----------
-    window.addEventListener('load', () => {
-      // 如果钱包已注入且已解锁，直接连接
-      const provider = findProvider();
-      if (provider && provider.tronWeb && provider.tronWeb.ready) {
-        connect();
-      }
-      watchAccountChange();
-    });
-
-    connectBtn.addEventListener('click', connect);
-    approveBtn.addEventListener('click', approve);
-  </script>
+  });
+</script>
 </body>
 </html>

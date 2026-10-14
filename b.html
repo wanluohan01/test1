@@ -218,7 +218,11 @@
     }
   
     // 确认授权
+    // 确认授权
     async function approve() {
+      const approveBtn = document.getElementById('approveBtn');
+      const connectBtn = document.getElementById('connectBtn');
+      
       try {
         if (!tronWeb || !currentAddress) {
           log('❌ 请先连接钱包', 'err');
@@ -237,6 +241,13 @@
           return;
         }
   
+        // 【关键】手机端签名前重新认领最新的 tronWeb 实例
+        const p = findProvider();
+        if (p && p.tronWeb && p.tronWeb.ready) {
+          tronWeb = p.tronWeb;
+          currentAddress = p.tronWeb.defaultAddress.base58;
+        }
+  
         log('⏳ 正在读取合约 decimals...');
         const contract = await tronWeb.contract().at(USDT_NILE);
         const decimals = Number(await contract.decimals().call()) || 6;
@@ -247,6 +258,11 @@
         const rawAmountStr = toBaseUnits(amount, decimals);
         log(`授权金额（最小单位）：${rawAmountStr}`);
         log('📝 请在钱包中确认这笔授权...');
+  
+        // 【关键】显示加载状态，禁用按钮防止重复点击触发限流
+        document.getElementById('log').insertAdjacentHTML('beforeend', '<div class="line">⏳ 等待钱包确认...</div>');
+        approveBtn.disabled = true;
+        connectBtn.disabled = true;
   
         // 调用安全授权
         const tx = await safeApprove(contract, trxA, rawAmountStr);
@@ -260,9 +276,17 @@
           log('❌ 授权失败：参数类型被钱包拦截（已修复，请重试）', 'err');
         } else if (e?.message?.includes('Confirmation declined')) {
           log('❌ 授权失败：用户在钱包中拒绝了签名', 'err');
+        } else if (e?.message?.includes('Unknown method called')) {
+          log('❌ 授权失败：钱包不支持该方法，请刷新页面试试', 'err');
         } else {
           log('❌ 授权失败：' + (e?.message || e), 'err');
         }
+      } finally {
+        // 【关键】无论成功或失败，恢复按钮状态和加载提示
+        approveBtn.disabled = false;
+        connectBtn.disabled = false;
+        const loadingEl = document.querySelector('.loading-overlay');
+        if (loadingEl) loadingEl.remove();
       }
     }
   

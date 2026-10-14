@@ -1,0 +1,27 @@
+name: Cleanup deployments
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "要清理的环境名，比如 github-pages / pr-preview"
+        required: true
+        default: "github-pages"
+      keep_count:
+        description: "保留最近几条不删"
+        required: false
+        default: "0"
+
+permissions:
+  deployments: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete deployments
+        uses: strumwolf/delete-deployment-environment@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          environment: ${{ github.event.inputs.environment }}
+          onlyRemoveDeployments: true

